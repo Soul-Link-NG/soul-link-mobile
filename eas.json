@@ -5,20 +5,22 @@
   },
   "build": {
     "development": {
-      "node": "22.16.0",
+      "node": "20.18.0",
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "COREPACK_ENABLE": "1"
+      }
     },
     "preview": {
-      "node": "22.16.0",
-      "distribution": "internal"
-    },
-    "production": {
-      "node": "22.16.0",
-      "autoIncrement": true
+      "node": "20.18.0",
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "COREPACK_ENABLE": "1"
+      }
     }
-  },
-  "submit": {
-    "production": {}
   }
 }

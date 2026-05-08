@@ -5,13 +5,12 @@
   "scripts": {
     "preinstall": "corepack enable",
     "start": "expo start",
-    "dev": "expo start --dev-client",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web",
-    "build:android": "eas build --profile development --platform android",
-    "run:android": "expo run:android",
-    "dev:go": "expo start"
+    "start:dev": "expo start --dev-client",
+    "start:android": "expo start --android",
+    "start:ios": "expo start --ios",
+    "start:web": "expo start --web",
+    "build:dev": "EAS_SKIP_AUTO_FINGERPRINT=1 eas build --profile development --platform android --clear-cache",
+    "build:apk": "EAS_SKIP_AUTO_FINGERPRINT=1 eas build --profile preview --platform android --clear-cache"
   },
   "dependencies": {
     "@babel/core": "^7.26.0",
