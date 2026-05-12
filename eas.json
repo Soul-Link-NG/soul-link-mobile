@@ -7,19 +7,13 @@
     "development": {
       "node": "20.18.0",
       "developmentClient": true,
-      "distribution": "internal",
-      "env": {
-        "COREPACK_ENABLE": "1"
-      }
+      "distribution": "internal"
     },
     "preview": {
       "node": "20.18.0",
       "distribution": "internal",
       "android": {
         "buildType": "apk"
-      },
-      "env": {
-        "COREPACK_ENABLE": "1"
       }
     }
   }
