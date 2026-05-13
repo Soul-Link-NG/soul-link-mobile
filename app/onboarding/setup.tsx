@@ -49,9 +49,10 @@ export default function OnboardingSetup() {
         const backAction = () => {
             if (currentStep > 0) {
                 setCurrentStep(currentStep - 1);
-                return true; // Prevent default behavior (exiting screen)
+                return true; // Go to previous step
             }
-            return false; // Allow default behavior (exit to landing)
+            // On step 0, block back so the user can't accidentally exit to landing
+            return true;
         };
 
         const backHandler = BackHandler.addEventListener(

@@ -19,7 +19,7 @@ import {
     MessageCircle,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -210,14 +210,14 @@ export function PostDetail({ reflection, comments = MOCK_COMMENTS, onBack }: Pos
         const next = !bookmarked;
         setBookmarked(next);
         try {
-            const raw = await AsyncStorage.getItem('bookmarks');
+            const raw = await SecureStore.getItemAsync('bookmarks');
             const list: string[] = raw ? JSON.parse(raw) : [];
             if (next) {
                 if (!list.includes(reflection.id)) {
-                    await AsyncStorage.setItem('bookmarks', JSON.stringify([...list, reflection.id]));
+                    await SecureStore.setItemAsync('bookmarks', JSON.stringify([...list, reflection.id]));
                 }
             } else {
-                await AsyncStorage.setItem(
+                await SecureStore.setItemAsync(
                     'bookmarks',
                     JSON.stringify(list.filter((id) => id !== reflection.id))
                 );

@@ -10,7 +10,7 @@ import {
     Clipboard,
     Platform,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { useRouter } from 'expo-router';
 import { Heart, MessageCircle, Share2, Bookmark, CheckCircle2, X, Copy, Link } from 'lucide-react-native';
 
@@ -61,18 +61,16 @@ export function ReflectionCard({ reflection, onCommentPress }: ReflectionCardPro
         const next = !bookmarked;
         setBookmarked(next);
         try {
+            const raw = await SecureStore.getItemAsync('bookmarks');
+            const bookmarks: string[] = raw ? JSON.parse(raw) : [];
             if (next) {
-                const raw = await AsyncStorage.getItem('bookmarks');
-                const bookmarks: string[] = raw ? JSON.parse(raw) : [];
                 if (!bookmarks.includes(reflection.id)) {
                     bookmarks.push(reflection.id);
-                    await AsyncStorage.setItem('bookmarks', JSON.stringify(bookmarks));
+                    await SecureStore.setItemAsync('bookmarks', JSON.stringify(bookmarks));
                 }
             } else {
-                const raw = await AsyncStorage.getItem('bookmarks');
-                const bookmarks: string[] = raw ? JSON.parse(raw) : [];
                 const updated = bookmarks.filter((id) => id !== reflection.id);
-                await AsyncStorage.setItem('bookmarks', JSON.stringify(updated));
+                await SecureStore.setItemAsync('bookmarks', JSON.stringify(updated));
             }
         } catch (e) {
             console.warn('Bookmark storage error', e);

@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { useRouter, useSegments } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 
 const TOKEN_KEY = 'soul-link-token';
@@ -23,12 +22,17 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/**
+ * AuthProvider is a PURE state/storage provider.
+ * It must NOT use useRouter() or useSegments() because it wraps <Slot /> in
+ * the root layout — before expo-router establishes its LinkingContext.
+ * Redirect logic belongs in route files (app/index.tsx) which live inside
+ * the navigation tree and have access to the LinkingContext.
+ */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [token, setToken] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
-    const router = useRouter();
-    const segments = useSegments();
 
     useEffect(() => {
         loadStorageData();
@@ -49,21 +53,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setIsLoading(false);
         }
     }
-
-    useEffect(() => {
-        if (isLoading) return;
-
-        const inAuthGroup = segments[0] === '(auth)';
-        const inOnboarding = segments[0] === 'onboarding';
-
-        if (!token && !inAuthGroup && !inOnboarding) {
-            router.replace('/(auth)/landing');
-        } else if (token && !user?.profileCompleted && !inOnboarding) {
-            router.replace('/onboarding/setup');
-        } else if (token && user?.profileCompleted && (inAuthGroup || inOnboarding)) {
-            router.replace('/(tabs)');
-        }
-    }, [token, user, segments, isLoading]);
 
     const login = async (newToken: string, newUser: User) => {
         try {
