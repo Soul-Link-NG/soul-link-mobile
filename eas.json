@@ -1,22 +1,30 @@
 {
+  "cli": {
+    "version": ">= 18.5.0",
+    "appVersionSource": "remote"
+  },
   "build": {
     "development": {
       "developmentClient": true,
       "distribution": "internal",
       "node": "22.13.0",
+      "env": {
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
+      },
       "android": {
         "image": "ubuntu-22.04-jdk-17-ndk-r26b"
-      },
-      "installCommand": "npm install"
+      }
     },
     "preview": {
       "distribution": "internal",
       "node": "22.13.0",
+      "env": {
+        "NPM_CONFIG_LEGACY_PEPS": "true"
+      },
       "android": {
         "buildType": "apk",
         "image": "ubuntu-22.04-jdk-17-ndk-r26b"
-      },
-      "installCommand": "npm install"
+      }
     }
   }
 }
