@@ -6,7 +6,8 @@ const USER_KEY = 'soul-link-user';
 
 export type User = {
     id: string;
-    email: string;
+    email?: string;
+    walletAddress?: string;
     username: string;
     displayName: string;
     profileCompleted: boolean;
@@ -17,6 +18,7 @@ type AuthContextType = {
     token: string | null;
     isLoading: boolean;
     login: (token: string, user: User) => Promise<void>;
+    loginWithWallet: (token: string, user: User) => Promise<void>;
     logout: () => Promise<void>;
 };
 
@@ -65,6 +67,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
+    const loginWithWallet = async (newToken: string, newUser: User) => {
+        // Same as login, but specifically for wallet-based auth
+        await login(newToken, newUser);
+    };
+
     const logout = async () => {
         try {
             await SecureStore.deleteItemAsync(TOKEN_KEY);
@@ -77,7 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     return (
-        <AuthContext.Provider value={{ user, token, isLoading, login, logout }}>
+        <AuthContext.Provider value={{ user, token, isLoading, login, loginWithWallet, logout }}>
             {children}
         </AuthContext.Provider>
     );

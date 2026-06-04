@@ -5,15 +5,18 @@
   },
   "build": {
     "development": {
-      "node": "20.18.0",
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "node": "22.13.0",
+      "android": {
+        "image": "ubuntu-22.04-jdk-17-ndk-r26b-node-22"
+      }
     },
     "preview": {
-      "node": "20.18.0",
       "distribution": "internal",
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "image": "ubuntu-22.04-jdk-17-ndk-r26b-node-22"
       }
     }
   }

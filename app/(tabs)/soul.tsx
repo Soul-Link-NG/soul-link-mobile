@@ -6,6 +6,7 @@ import { Settings, Share2, Grid, Bookmark, MessageSquare, CheckCircle2, X, Searc
 import { ReflectionCard } from '../../src/components/ReflectionCard';
 import { TopBar } from '../../components/TopBar';
 import { COLORS } from '../../constants/Theme';
+import { useWeb3 } from '../../src/context/Web3Context';
 
 const MOCK_USER = {
     username: 'abulex',
@@ -39,13 +40,15 @@ export default function ProfileScreen() {
     const [isUserListModalVisible, setIsUserListModalVisible] = useState(false);
     const [userListType, setUserListType] = useState<'Followers' | 'Following'>('Followers');
     const [searchQuery, setSearchQuery] = useState('');
+    const [isLinked, setIsLinked] = useState(false);
+    const [isLinking, setIsLinking] = useState(false);
     const router = useRouter();
     
     const [displayName, setDisplayName] = useState(MOCK_USER.displayName);
     const [bio, setBio] = useState(MOCK_USER.bio);
     
-    const [isLinking, setIsLinking] = useState(false);
-    const [isLinked, setIsLinked] = useState(false);
+    // Get wallet info from Web3Context
+    const { address, chainName, disconnectWallet } = useWeb3();
 
     const soulRightContent = (
         <TouchableOpacity

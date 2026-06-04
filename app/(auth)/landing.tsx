@@ -37,17 +37,17 @@ export default function LandingScreen() {
                         {/* CTA Buttons */}
                         <View className="py-6">
                             <TouchableOpacity
-                                onPress={() => router.push('/onboarding/setup')}
-                                className="bg-[#b3f0cc] py-4 rounded-full items-center justify-center mb-4 shadow-lg shadow-[#b3f0cc]/20"
+                                onPress={() => router.push('/(auth)/wallet-connect')}
+                                className="bg-[#5EEAD4] py-4 rounded-full items-center justify-center mb-4 shadow-lg shadow-[#5EEAD4]/20"
                             >
-                                <Text className="text-[#05070A] font-bold text-lg">Begin your journey</Text>
+                                <Text className="text-[#05070A] font-bold text-lg">Connect Wallet</Text>
                             </TouchableOpacity>
 
                             <TouchableOpacity
                                 onPress={() => router.push('/(auth)/login')}
                                 className="items-center py-2"
                             >
-                                <Text className="text-slate-300 font-semibold text-base">Login</Text>
+                                <Text className="text-slate-300 font-semibold text-base">Or continue with email</Text>
                             </TouchableOpacity>
                         </View>
 

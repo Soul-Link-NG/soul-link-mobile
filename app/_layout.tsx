@@ -1,3 +1,8 @@
+import "@walletconnect/react-native-compat";
+import "react-native-get-random-values";
+import { Buffer } from "buffer";
+if (typeof global.Buffer === "undefined") { global.Buffer = Buffer; }
+
 import "react-native-gesture-handler";
 import React, { useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
@@ -7,7 +12,11 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as SplashScreen from "expo-splash-screen";
 import Toast from "react-native-toast-message";
 
+// Initialize AppKit at the root
+import "../src/config/appkit.config";
+
 import { AuthProvider, useAuth } from "../src/context/AuthContext";
+import { Web3Provider } from "../src/context/Web3Context";
 import { AnimatedSplashScreen } from "../components/AnimatedSplashScreen";
 import "../global.css";
 
@@ -79,19 +88,21 @@ export default function AppLayout() {
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <View style={styles.rootContainer}>
-            {/* Call the newly isolated inner navigator component here */}
-            <NavigationNavigator isAppUiReady={isAppUiReady} />
+        <Web3Provider>
+          <AuthProvider>
+            <View style={styles.rootContainer}>
+              {/* Call the newly isolated inner navigator component here */}
+              <NavigationNavigator isAppUiReady={isAppUiReady} />
 
-            {(!appReady || !splashAnimationFinished) && (
-              <AnimatedSplashScreen
-                onFinish={() => setSplashAnimationFinished(true)}
-              />
-            )}
-          </View>
-          <Toast />
-        </AuthProvider>
+              {(!appReady || !splashAnimationFinished) && (
+                <AnimatedSplashScreen
+                  onFinish={() => setSplashAnimationFinished(true)}
+                />
+              )}
+            </View>
+            <Toast />
+          </AuthProvider>
+        </Web3Provider>
       </QueryClientProvider>
     </SafeAreaProvider>
   );
