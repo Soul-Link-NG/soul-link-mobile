@@ -9,14 +9,15 @@
       "distribution": "internal",
       "node": "22.13.0",
       "android": {
-        "image": "ubuntu-22.04-jdk-17-ndk-r26b-node-22"
+        "image": "ubuntu-22.04-jdk-17-ndk-r26b"
       }
     },
     "preview": {
       "distribution": "internal",
+      "node": "22.13.0",
       "android": {
         "buildType": "apk",
-        "image": "ubuntu-22.04-jdk-17-ndk-r26b-node-22"
+        "image": "ubuntu-22.04-jdk-17-ndk-r26b"
       }
     }
   }
