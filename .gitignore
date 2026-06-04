@@ -48,3 +48,6 @@ yarn-error.*
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+.repomixignore
+repomix-output.xml
