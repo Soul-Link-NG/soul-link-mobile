@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -8,6 +8,10 @@ import {
     KeyboardAvoidingView,
     Platform,
     StatusBar,
+    ActivityIndicator,
+    ScrollView,
+    Image,
+    useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -20,6 +24,10 @@ import {
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
+import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import { getDisplayName } from '../utils/userIdentity';
+import Toast from 'react-native-toast-message';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -34,14 +42,18 @@ type Comment = {
     id: string;
     content: string;
     createdAt: string;
-    author: Author;
-    _count: { likes: number };
+    user: {
+        id: string;
+        username: string;
+        displayName: string;
+    };
 };
 
 type Reflection = {
     id: string;
     content: string;
     imageUrl?: string;
+    imageUrls?: string[];
     topicTags: string[];
     createdAt: string;
     author: Author;
@@ -50,35 +62,10 @@ type Reflection = {
 
 type PostDetailProps = {
     reflection: Reflection;
-    comments?: Comment[];
+    comments?: any[];
     onBack?: () => void;
+    onRefresh?: () => void;
 };
-
-// ── Mock comments (remove when you have real data) ───────────────────────────
-
-const MOCK_COMMENTS: Comment[] = [
-    {
-        id: 'c1',
-        content: 'This really resonated with me. Thank you for sharing 🙏',
-        createdAt: '2026-04-10T12:00:00Z',
-        author: { username: 'luna_wren', displayName: 'Luna Wren', isVerified: false },
-        _count: { likes: 7 },
-    },
-    {
-        id: 'c2',
-        content: 'Profound words. Saving this to revisit on hard days.',
-        createdAt: '2026-04-10T13:00:00Z',
-        author: { username: 'axiom99', displayName: 'Axiom', isVerified: true },
-        _count: { likes: 14 },
-    },
-    {
-        id: 'c3',
-        content: 'I needed to hear this today more than I can say.',
-        createdAt: '2026-04-10T14:30:00Z',
-        author: { username: 'mira_k', displayName: 'Mira K', isVerified: false },
-        _count: { likes: 3 },
-    },
-];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -106,7 +93,7 @@ function Avatar({ name, size = 40 }: { name: string; size?: number }) {
             }}
         >
             <Text style={{ color: '#5EEAD4', fontWeight: 'bold', fontSize: size * 0.4 }}>
-                {name[0].toUpperCase()}
+                {name ? name[0].toUpperCase() : '?'}
             </Text>
         </View>
     );
@@ -114,10 +101,10 @@ function Avatar({ name, size = 40 }: { name: string; size?: number }) {
 
 // ── Comment Row ───────────────────────────────────────────────────────────────
 
-function CommentRow({ comment }: { comment: Comment }) {
-    const [liked, setLiked] = useState(false);
-    const [count, setCount] = useState(comment._count.likes);
+function CommentRow({ comment }: { comment: any }) {
     const router = useRouter();
+    const displayName = getDisplayName(comment.user || comment.author);
+    const username = comment.user?.username || comment.author?.username || 'anonymous';
 
     return (
         <View
@@ -130,60 +117,37 @@ function CommentRow({ comment }: { comment: Comment }) {
             }}
         >
             <TouchableOpacity onPress={() => {
-                if (comment.author.username === 'abulex') {
+                if (username === 'abulex') {
                     router.push('/(tabs)/soul');
                 } else {
-                    router.push(`/profile/${comment.author.username}`);
+                    router.push(`/profile/${username}`);
                 }
             }}>
-                <Avatar name={comment.author.displayName} size={36} />
+                <Avatar name={displayName} size={36} />
             </TouchableOpacity>
             <View style={{ flex: 1 }}>
                 {/* Author */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                     <TouchableOpacity onPress={() => {
-                        if (comment.author.username === 'abulex') {
+                        if (username === 'abulex') {
                             router.push('/(tabs)/soul');
                         } else {
-                            router.push(`/profile/${comment.author.username}`);
+                            router.push(`/profile/${username}`);
                         }
                     }}>
                         <Text style={{ color: 'white', fontWeight: '600', fontSize: 14 }}>
-                            {comment.author.displayName}
+                            {displayName}
                         </Text>
                     </TouchableOpacity>
-                    {comment.author.isVerified && (
-                        <CheckCircle2 color="#5EEAD4" size={13} fill="#5EEAD4" stroke="#05070A" />
-                    )}
                     <Text style={{ color: '#64748B', fontSize: 12, marginLeft: 'auto' }}>
                         {relativeTime(comment.createdAt)}
                     </Text>
                 </View>
 
                 {/* Body */}
-                <Text style={{ color: '#CBD5E1', fontSize: 14, lineHeight: 20, marginBottom: 8 }}>
+                <Text style={{ color: '#CBD5E1', fontSize: 14, lineHeight: 20, marginBottom: 4 }}>
                     {comment.content}
                 </Text>
-
-                {/* Like */}
-                <TouchableOpacity
-                    onPress={() => {
-                        setLiked((p) => {
-                            setCount((c) => (p ? c - 1 : c + 1));
-                            return !p;
-                        });
-                    }}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start' }}
-                    activeOpacity={0.7}
-                >
-                    <Heart
-                        color={liked ? '#F43F5E' : '#64748B'}
-                        fill={liked ? '#F43F5E' : 'transparent'}
-                        size={15}
-                        strokeWidth={1.5}
-                    />
-                    <Text style={{ color: liked ? '#F43F5E' : '#64748B', fontSize: 12 }}>{count}</Text>
-                </TouchableOpacity>
             </View>
         </View>
     );
@@ -191,25 +155,64 @@ function CommentRow({ comment }: { comment: Comment }) {
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
-
-export function PostDetail({ reflection, comments = MOCK_COMMENTS, onBack }: PostDetailProps) {
+export function PostDetail({ reflection, comments = [], onBack, onRefresh }: PostDetailProps) {
+    const { user: currentUser } = useAuth();
     const [liked, setLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(reflection._count.likes);
     const [bookmarked, setBookmarked] = useState(false);
     const [replyText, setReplyText] = useState('');
+    const [commentsList, setCommentsList] = useState<any[]>(comments);
+    const [postingReply, setPostingReply] = useState(false);
     const router = useRouter();
+    const { width } = useWindowDimensions();
 
-    const handleLike = () => {
-        setLiked((p) => {
-            setLikeCount((c) => (p ? c - 1 : c + 1));
-            return !p;
-        });
+    useEffect(() => {
+        setCommentsList(comments);
+    }, [comments]);
+
+    useEffect(() => {
+        const checkInitialStates = async () => {
+            try {
+                const raw = await SecureStore.getItemAsync('bookmarks');
+                const list: string[] = raw ? JSON.parse(raw) : [];
+                if (list.includes(reflection.id)) {
+                    setBookmarked(true);
+                }
+            } catch (e) {
+                console.warn(e);
+            }
+        };
+        checkInitialStates();
+    }, [reflection.id]);
+
+    const handleLike = async () => {
+        const next = !liked;
+        setLiked(next);
+        setLikeCount((c) => (next ? c + 1 : c - 1));
+        try {
+            if (next) {
+                await api.post(`/reflections/like/${reflection.id}`);
+            } else {
+                await api.delete(`/reflections/unlike/${reflection.id}`);
+            }
+        } catch (e) {
+            console.error('Like error:', e);
+            // revert
+            setLiked(!next);
+            setLikeCount((c) => (next ? c - 1 : c + 1));
+        }
     };
 
     const handleBookmark = async () => {
         const next = !bookmarked;
         setBookmarked(next);
         try {
+            if (next) {
+                await api.post(`/reflections/bookmark/${reflection.id}`);
+            } else {
+                await api.delete(`/reflections/unbookmark/${reflection.id}`);
+            }
+
             const raw = await SecureStore.getItemAsync('bookmarks');
             const list: string[] = raw ? JSON.parse(raw) : [];
             if (next) {
@@ -223,7 +226,40 @@ export function PostDetail({ reflection, comments = MOCK_COMMENTS, onBack }: Pos
                 );
             }
         } catch (e) {
-            console.warn('Bookmark error', e);
+            console.error('Bookmark error:', e);
+            setBookmarked(!next);
+        }
+    };
+
+    const handleAddComment = async () => {
+        if (!replyText.trim() || postingReply) return;
+        setPostingReply(true);
+        try {
+            const response = await api.post(`/reflections/${reflection.id}/comments`, {
+                content: replyText.trim(),
+            });
+
+            // Add new comment locally
+            setCommentsList((prev) => [...prev, response.data]);
+            setReplyText('');
+
+            if (onRefresh) {
+                onRefresh();
+            }
+
+            Toast.show({
+                type: 'success',
+                text1: 'Reply posted',
+            });
+        } catch (e) {
+            console.error('Comment error:', e);
+            Toast.show({
+                type: 'error',
+                text1: 'Failed to reply',
+                text2: 'Please try again later.',
+            });
+        } finally {
+            setPostingReply(false);
         }
     };
 
@@ -240,22 +276,54 @@ export function PostDetail({ reflection, comments = MOCK_COMMENTS, onBack }: Pos
                 }}
             >
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                    <TouchableOpacity onPress={() => router.push(`/profile/${reflection.author.username}`)}>
-                        <Avatar name={reflection.author.displayName} />
+                    <TouchableOpacity onPress={() => {
+                        if (reflection.author?.username === 'abulex') {
+                            router.push('/(tabs)/soul');
+                        } else {
+                            router.push(`/profile/${reflection.author?.username || 'anonymous'}`);
+                        }
+                    }}>
+                        <Avatar name={getDisplayName(reflection.author)} />
                     </TouchableOpacity>
                     <View style={{ flex: 1 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <Text style={{ color: 'white', fontWeight: '700', fontSize: 15 }}>
-                                {reflection.author.displayName}
+                            <Text style={{ color: 'white', fontWeight: '700', fontSize: 15, textTransform: 'lowercase' }}>
+                                {getDisplayName(reflection.author)}
                             </Text>
-                            {reflection.author.isVerified && (
+                            {reflection.author?.isVerified && (
                                 <CheckCircle2 color="#5EEAD4" size={14} fill="#5EEAD4" stroke="#05070A" />
                             )}
                         </View>
-                        <Text style={{ color: '#64748B', fontSize: 13 }}>@{reflection.author.username}</Text>
+                        <Text style={{ color: '#64748B', fontSize: 13 }}>@{reflection.author?.username || 'anonymous'}</Text>
                     </View>
                     <Text style={{ color: '#64748B', fontSize: 12 }}>{relativeTime(reflection.createdAt)}</Text>
                 </View>
+
+                {(reflection.imageUrls?.length || reflection.imageUrl) ? (
+                    <View style={{ marginBottom: 16 }}>
+                        <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false}>
+                            {(reflection.imageUrls?.length ? reflection.imageUrls : [reflection.imageUrl]).filter(Boolean).map((uri, index) => (
+                                <View key={`${reflection.id}-${index}`} style={{ width: Math.max(240, width - 84), marginRight: 10 }}>
+                                    <Image
+                                        source={{ uri: uri as string }}
+                                        style={{
+                                            width: Math.max(240, width - 84),
+                                            height: 220,
+                                            borderRadius: 20,
+                                            backgroundColor: 'rgba(255,255,255,0.04)',
+                                        }}
+                                        resizeMode="cover"
+                                    />
+                                </View>
+                            ))}
+                        </ScrollView>
+                        {((reflection.imageUrls?.length || 0) + (reflection.imageUrl ? 1 : 0)) > 1 && (
+                            <Text style={{ color: '#64748B', fontSize: 11, textAlign: 'center', marginTop: 8 }}>
+                                Swipe to view all images
+                            </Text>
+                        )}
+                    </View>
+                ) : null}
 
                 <Text style={{ color: 'white', fontSize: 18, lineHeight: 28, marginBottom: 16 }}>
                     {reflection.content}
@@ -271,7 +339,7 @@ export function PostDetail({ reflection, comments = MOCK_COMMENTS, onBack }: Pos
 
                 <View style={{ flexDirection: 'row', gap: 16, paddingVertical: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)', borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)', marginBottom: 14 }}>
                     <Text style={{ color: '#64748B', fontSize: 13 }}><Text style={{ color: 'white', fontWeight: '600' }}>{likeCount}</Text> likes</Text>
-                    <Text style={{ color: '#64748B', fontSize: 13 }}><Text style={{ color: 'white', fontWeight: '600' }}>{reflection._count.comments}</Text> comments</Text>
+                    <Text style={{ color: '#64748B', fontSize: 13 }}><Text style={{ color: 'white', fontWeight: '600' }}>{commentsList.length}</Text> comments</Text>
                 </View>
 
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 28 }}>
@@ -291,7 +359,7 @@ export function PostDetail({ reflection, comments = MOCK_COMMENTS, onBack }: Pos
             </View>
 
             <View style={{ paddingHorizontal: 4, paddingVertical: 12 }}>
-                <Text style={{ color: 'white', fontWeight: '700', fontSize: 16 }}>Comments ({reflection._count.comments})</Text>
+                <Text style={{ color: 'white', fontWeight: '700', fontSize: 16 }}>Comments ({commentsList.length})</Text>
             </View>
         </View>
     );
@@ -299,7 +367,6 @@ export function PostDetail({ reflection, comments = MOCK_COMMENTS, onBack }: Pos
     return (
         <View style={{ flex: 1, backgroundColor: '#05070A' }}>
             <StatusBar barStyle="light-content" />
-            {/* FIX 1: Include 'bottom' in edges to respect Android/Samsung navigation buttons */}
             <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right', 'bottom']}>
 
                 {/* Top navigation */}
@@ -310,20 +377,19 @@ export function PostDetail({ reflection, comments = MOCK_COMMENTS, onBack }: Pos
                     <Text style={{ color: 'white', fontWeight: '700', fontSize: 17 }}>Reflection</Text>
                 </View>
 
-                {/* FIX 2: Better Android Keyboard behavior */}
                 <KeyboardAvoidingView
                     style={{ flex: 1 }}
                     behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                     keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
                 >
                     <FlatList
-                        data={comments}
+                        data={commentsList}
                         keyExtractor={(item) => item.id}
                         ListHeaderComponent={ListHeader}
                         renderItem={({ item }) => <CommentRow comment={item} />}
                         contentContainerStyle={{
                             paddingHorizontal: 20,
-                            paddingBottom: 20 // Added a bit of breathing room at bottom of list
+                            paddingBottom: 20
                         }}
                         showsVerticalScrollIndicator={false}
                     />
@@ -336,13 +402,13 @@ export function PostDetail({ reflection, comments = MOCK_COMMENTS, onBack }: Pos
                             gap: 12,
                             paddingHorizontal: 20,
                             paddingTop: 12,
-                            paddingBottom: Platform.OS === 'ios' ? 0 : 12, // Native padding if not handled by SafeArea
+                            paddingBottom: Platform.OS === 'ios' ? 20 : 12,
                             borderTopWidth: 1,
                             borderTopColor: 'rgba(255,255,255,0.06)',
                             backgroundColor: '#05070A',
                         }}
                     >
-                        <Avatar name="Y" size={34} />
+                        <Avatar name={getDisplayName(currentUser)} size={34} />
                         <View
                             style={{
                                 flex: 1,
@@ -366,8 +432,12 @@ export function PostDetail({ reflection, comments = MOCK_COMMENTS, onBack }: Pos
                                 multiline={false}
                             />
                             {replyText.length > 0 && (
-                                <TouchableOpacity onPress={() => setReplyText('')}>
-                                    <Send color="#5EEAD4" size={18} strokeWidth={1.5} />
+                                <TouchableOpacity onPress={handleAddComment} disabled={postingReply}>
+                                    {postingReply ? (
+                                        <ActivityIndicator size="small" color="#5EEAD4" />
+                                    ) : (
+                                        <Send color="#5EEAD4" size={18} strokeWidth={1.5} />
+                                    )}
                                 </TouchableOpacity>
                             )}
                         </View>

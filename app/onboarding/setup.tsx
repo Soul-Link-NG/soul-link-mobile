@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Platform, Switch, BackHandler } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Platform, Switch, BackHandler, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import {
@@ -9,6 +9,8 @@ import {
 } from 'lucide-react-native';
 import { COLORS } from '../../constants/Theme';
 import { useAuth } from '../../src/context/AuthContext';
+import { api } from '../../src/services/api';
+import Toast from 'react-native-toast-message';
 
 const FOUNDATION_VALUES = [
     'Compassion', 'Integrity', 'Growth', 'Wisdom',
@@ -26,6 +28,7 @@ export default function OnboardingSetup() {
         foundations: [] as string[],
         displayName: '',
         username: '',
+        soulId: '',
         birthday: '',
         gender: '',
         pronouns: '',
@@ -41,9 +44,19 @@ export default function OnboardingSetup() {
     
     // UI state
     const [socialInputVisible, setSocialInputVisible] = useState({ twitter: false, instagram: false, linkedin: false });
+    const [loading, setLoading] = useState(false);
+    const [soulIdChecking, setSoulIdChecking] = useState(false);
 
-    const { login } = useAuth();
+    const { login, token } = useAuth();
     const router = useRouter();
+
+    const normalizeSoulIdInput = (value: string) =>
+        value.trim().toLowerCase().replace(/\.soul$/i, '');
+
+    const buildSoulId = (value: string) => {
+        const handle = normalizeSoulIdInput(value);
+        return handle ? `${handle}.soul` : '';
+    };
 
     useEffect(() => {
         const backAction = () => {
@@ -63,7 +76,56 @@ export default function OnboardingSetup() {
         return () => backHandler.remove();
     }, [currentStep]);
 
-    const handleNext = () => {
+    const handleNext = async () => {
+        if (currentStep === 2) {
+            if (!formData.username || !formData.displayName) {
+                Toast.show({
+                    type: 'error',
+                    text1: 'Required Fields',
+                    text2: 'Username and Display Name are required.',
+                });
+                return;
+            }
+
+            const soulId = buildSoulId(formData.soulId);
+            if (!soulId) {
+                Toast.show({
+                    type: 'error',
+                    text1: 'Soul ID Required',
+                    text2: 'Choose a unique Soul ID before continuing.',
+                });
+                return;
+            }
+
+            setSoulIdChecking(true);
+            try {
+                const res = await api.get('/profile/identity/check', {
+                    params: { soulId },
+                });
+
+                if (!res.data.available) {
+                    Toast.show({
+                        type: 'error',
+                        text1: 'Soul ID Taken',
+                        text2: 'Please choose another Soul ID.',
+                    });
+                    return;
+                }
+
+                setFormData((prev) => ({ ...prev, soulId }));
+                setCurrentStep(currentStep + 1);
+            } catch (error: any) {
+                Toast.show({
+                    type: 'error',
+                    text1: 'Soul ID Check Failed',
+                    text2: error.response?.data?.message || 'Unable to verify Soul ID.',
+                });
+            } finally {
+                setSoulIdChecking(false);
+            }
+            return;
+        }
+
         if (currentStep < 6) {
             setCurrentStep(currentStep + 1);
         } else {
@@ -82,14 +144,79 @@ export default function OnboardingSetup() {
     };
 
     const handleComplete = async () => {
-        await login('mock-token', {
-            id: '1',
-            email: 'user@example.com',
-            username: formData.username || 'user',
-            displayName: formData.displayName || 'Soul Linker',
-            profileCompleted: true,
-        });
-        router.replace('/(tabs)');
+        if (!formData.username || !formData.displayName) {
+            Toast.show({
+                type: 'error',
+                text1: 'Required Fields',
+                text2: 'Username and Display Name are required.',
+            });
+            setCurrentStep(2); // Jump to Step 3: Basic Info (index 2)
+            return;
+        }
+
+        const soulId = buildSoulId(formData.soulId);
+        if (!soulId) {
+            Toast.show({
+                type: 'error',
+                text1: 'Soul ID Required',
+                text2: 'Choose your Soul ID before finishing setup.',
+            });
+            setCurrentStep(2);
+            return;
+        }
+
+        setLoading(true);
+        try {
+            // Parse & validate birthday
+            let birthdayDate: Date | undefined;
+            if (formData.birthday.trim()) {
+                const parsed = new Date(formData.birthday);
+                if (!isNaN(parsed.getTime())) {
+                    birthdayDate = parsed;
+                }
+            }
+
+            // Normalize gender
+            let genderEnum: string | undefined;
+            const upperGender = formData.gender.toUpperCase().trim().replace(/\s+/g, '_');
+            if (['MALE', 'FEMALE', 'NON_BINARY', 'OTHER', 'PREFER_NOT_TO_SAY'].includes(upperGender)) {
+                genderEnum = upperGender;
+            }
+
+            const payload = {
+                username: formData.username.trim(),
+                displayName: formData.displayName.trim(),
+                soulId,
+                birthday: birthdayDate,
+                gender: genderEnum,
+                pronouns: formData.pronouns.trim() || undefined,
+                bio: formData.bio.trim() || undefined,
+                interests: formData.interests.length > 0 ? formData.interests : undefined,
+                profileCompleted: true,
+            };
+
+            const response = await api.patch('/profile/setup', payload);
+
+            if (token) {
+                await login(token, response.data);
+            }
+
+            Toast.show({
+                type: 'success',
+                text1: 'Onboarding Complete',
+                text2: 'Welcome to SoulLink!',
+            });
+            router.replace('/(tabs)');
+        } catch (error: any) {
+            console.error('Onboarding setup error:', error);
+            Toast.show({
+                type: 'error',
+                text1: 'Setup Failed',
+                text2: error.response?.data?.message || 'Failed to complete onboarding setup',
+            });
+        } finally {
+            setLoading(false);
+        }
     };
 
     const toggleFoundation = (value: string) => {
@@ -232,6 +359,29 @@ export default function OnboardingSetup() {
                                         autoCapitalize="none"
                                     />
                                 </View>
+                            </View>
+                            <View className="bg-[#0F1219] border border-white/10 rounded-2xl p-2 px-4">
+                                <View className="flex-row items-center justify-between pt-1">
+                                    <Text className="text-slate-500 text-xs font-semibold">Soul ID</Text>
+                                    <Text className="text-slate-600 text-[10px] font-semibold">Must end in .soul</Text>
+                                </View>
+                                <View className="flex-row items-center">
+                                    <TextInput
+                                        className="text-white text-lg py-1 flex-1"
+                                        placeholder="alex"
+                                        placeholderTextColor="#475569"
+                                        value={formData.soulId}
+                                        onChangeText={(t) =>
+                                            setFormData({ ...formData, soulId: normalizeSoulIdInput(t) })
+                                        }
+                                        autoCapitalize="none"
+                                        autoCorrect={false}
+                                    />
+                                    <Text className="text-slate-400 text-lg py-1 ml-1">.soul</Text>
+                                </View>
+                                {soulIdChecking && (
+                                    <Text className="text-[#5EEAD4] text-xs mt-1">Checking availability...</Text>
+                                )}
                             </View>
                             <View className="bg-[#0F1219] border border-white/10 rounded-2xl p-2 px-4">
                                 <Text className="text-slate-500 text-xs font-semibold pt-1">Birthday / Age</Text>
@@ -500,6 +650,7 @@ export default function OnboardingSetup() {
                                 <View>
                                     <Text className="text-white font-bold text-xl">{formData.displayName || 'Anonymous'}</Text>
                                     <Text className="text-slate-400">@{formData.username || 'user'}</Text>
+                                    <Text className="text-[#5EEAD4] text-xs mt-1">{buildSoulId(formData.soulId) || 'name.soul'}</Text>
                                 </View>
                             </View>
                         </View>
@@ -605,9 +756,14 @@ export default function OnboardingSetup() {
                     ) : currentStep === 6 ? (
                          <TouchableOpacity
                             onPress={handleComplete}
-                            className="bg-[#5EEAD4] py-4 rounded-full items-center justify-center shadow-lg shadow-[#5EEAD4]/20"
+                            disabled={loading}
+                            className={`py-4 rounded-full items-center justify-center shadow-lg ${loading ? 'bg-[#5EEAD4]/50' : 'bg-[#5EEAD4] shadow-[#5EEAD4]/20'}`}
                         >
-                            <Text className="text-[#05070A] font-extrabold text-lg">Finish & Enter SoulLink</Text>
+                            {loading ? (
+                                <ActivityIndicator color="#05070A" />
+                            ) : (
+                                <Text className="text-[#05070A] font-extrabold text-lg">Finish & Enter SoulLink</Text>
+                            )}
                         </TouchableOpacity>
                     ) : (
                         <TouchableOpacity

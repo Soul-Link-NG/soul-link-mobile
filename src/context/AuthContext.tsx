@@ -9,7 +9,14 @@ export type User = {
     email?: string;
     walletAddress?: string;
     username: string;
+    soulId?: string;
     displayName: string;
+    bio?: string;
+    avatarUrl?: string;
+    interests?: string[];
+    socialLinks?: Record<string, string>;
+    karmaBalance?: number;
+    referralCount?: number;
     profileCompleted: boolean;
 };
 
@@ -20,6 +27,7 @@ type AuthContextType = {
     login: (token: string, user: User) => Promise<void>;
     loginWithWallet: (token: string, user: User) => Promise<void>;
     logout: () => Promise<void>;
+    setUser: (user: User) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -56,7 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
     }
 
-    const login = async (newToken: string, newUser: User) => {
+    const persistUser = async (newToken: string, newUser: User) => {
         try {
             await SecureStore.setItemAsync(TOKEN_KEY, newToken);
             await SecureStore.setItemAsync(USER_KEY, JSON.stringify(newUser));
@@ -67,9 +75,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
+    const login = async (newToken: string, newUser: User) => {
+        await persistUser(newToken, newUser);
+    };
+
     const loginWithWallet = async (newToken: string, newUser: User) => {
         // Same as login, but specifically for wallet-based auth
-        await login(newToken, newUser);
+        await persistUser(newToken, newUser);
+    };
+
+    const updateUser = async (nextUser: User) => {
+        setUser(nextUser);
+        if (token) {
+            await SecureStore.setItemAsync(USER_KEY, JSON.stringify(nextUser));
+        }
     };
 
     const logout = async () => {
@@ -84,7 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     return (
-        <AuthContext.Provider value={{ user, token, isLoading, login, loginWithWallet, logout }}>
+        <AuthContext.Provider value={{ user, token, isLoading, login, loginWithWallet, logout, setUser: updateUser }}>
             {children}
         </AuthContext.Provider>
     );

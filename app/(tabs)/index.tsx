@@ -1,45 +1,28 @@
-import React, { useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StatusBar, TextInput } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import {
+    View,
+    Text,
+    FlatList,
+    TouchableOpacity,
+    StatusBar,
+    TextInput,
+    Modal,
+    ActivityIndicator,
+    RefreshControl,
+    KeyboardAvoidingView,
+    Platform,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Flame, Users, PlusCircle } from 'lucide-react-native';
+import { Flame, Users, PlusCircle, X, Send } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { ReflectionCard } from '../../src/components/ReflectionCard';
 import { TopBar } from '../../components/TopBar';
-
-const MOCK_REFLECTIONS = [
-    {
-        id: '1',
-        content: 'The universe is not outside of you. Look inside everything that you want, you already are.',
-        topicTags: ['Mindfulness', 'Wisdom'],
-        createdAt: '2026-04-10T10:00:00Z',
-        author: { username: 'abulex', displayName: 'Abulex', isVerified: true },
-        _count: { likes: 42, comments: 12 },
-    },
-    {
-        id: '2',
-        content: 'Building a decentralized future for social connection. One reflection at a time. 🌐✨',
-        topicTags: ['Web3', 'SoulLink'],
-        createdAt: '2026-04-10T11:00:00Z',
-        author: { username: 'soulink', displayName: 'SoulLink', isVerified: true },
-        _count: { likes: 88, comments: 24 },
-    },
-    {
-        id: '3',
-        content: 'Reflection is the mirror of the mind. Today, I am grateful for the small moments of silence.',
-        topicTags: ['Gratitude', 'Silence'],
-        createdAt: '2026-04-11T09:00:00Z',
-        author: { username: 'zen_master', displayName: 'Zen Master', isVerified: false },
-        _count: { likes: 15, comments: 5 },
-    },
-    {
-        id: '4',
-        content: 'Is truth discovered or created? Discuss.',
-        topicTags: ['Philosophy', 'Truth'],
-        createdAt: '2026-04-11T14:00:00Z',
-        author: { username: 'philosopher_king', displayName: 'Phil', isVerified: true },
-        _count: { likes: 120, comments: 45 },
-    },
-];
+import { api } from '../../src/services/api';
+import { useAuth } from '../../src/context/AuthContext';
+import { getAvatarInitial } from '../../src/utils/userIdentity';
+import { Web3PulseLoader } from '../../components/Web3PulseLoader';
+import Toast from 'react-native-toast-message';
 
 type FeedTab = 'trending' | 'following';
 
@@ -50,18 +33,100 @@ const TABS: { key: FeedTab; label: string; Icon: React.ComponentType<any> }[] = 
 
 export default function HomeFeed() {
     const [feedType, setFeedType] = useState<FeedTab>('trending');
-    const [newReflection, setNewReflection] = useState('');
+    const [reflections, setReflections] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+
+    const [newPostText, setNewPostText] = useState('');
+    const [postTags, setPostTags] = useState('');
+    const [postImages, setPostImages] = useState('');
+    const [composeVisible, setComposeVisible] = useState(false);
+    const [posting, setPosting] = useState(false);
+
+    const { user, setUser } = useAuth();
     const router = useRouter();
 
-    const handlePostReflection = () => {
-        if (newReflection.trim()) {
-            console.log('Posting reflection:', newReflection);
-            setNewReflection('');
+    const fetchFeed = async () => {
+        try {
+            const endpoint =
+                feedType === 'trending' ? '/reflections/trending' : '/reflections/following';
+            const response = await api.get(endpoint);
+            setReflections(response.data);
+        } catch (error) {
+            console.error('Feed fetch error:', error);
+            Toast.show({ type: 'error', text1: 'Could not load feed' });
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
+    };
+
+    useFocusEffect(
+        useCallback(() => {
+            setLoading(true);
+            fetchFeed();
+        }, [feedType])
+    );
+
+    const handleRefresh = () => {
+        setRefreshing(true);
+        fetchFeed();
+    };
+
+    const handlePost = async () => {
+        if (!newPostText.trim()) return;
+        setPosting(true);
+        try {
+            const tags = postTags
+                .split(',')
+                .map((t) => t.trim())
+                .filter(Boolean);
+            const imageUrls = postImages
+                .split(',')
+                .map((t) => t.trim())
+                .filter(Boolean);
+            const res = await api.post('/reflections', {
+                content: newPostText.trim(),
+                topicTags: tags,
+                imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
+            });
+            const createdReflection = res.data.reflection;
+            if (createdReflection) {
+                setReflections((prev) => [createdReflection, ...prev.filter((item) => item.id !== createdReflection.id)]);
+            }
+            if (res.data.updatedUser) {
+                await setUser?.(res.data.updatedUser);
+            } else if (res.data.rewardGranted && user) {
+                await setUser?.({
+                    ...user,
+                    karmaBalance: (user.karmaBalance ?? 0) + 5,
+                });
+            }
+            setNewPostText('');
+            setPostTags('');
+            setPostImages('');
+            setComposeVisible(false);
+            Toast.show({
+                type: 'success',
+                text1: 'Reflection posted!',
+                text2: res.data.rewardGranted ? 'Mission completed. +5 KARMA awarded.' : undefined,
+            });
+            setLoading(true);
+            fetchFeed();
+        } catch (error: any) {
+            console.error('Post error:', error);
+            Toast.show({
+                type: 'error',
+                text1: 'Post failed',
+                text2: error.response?.data?.message || 'Please try again',
+            });
+        } finally {
+            setPosting(false);
         }
     };
 
     return (
-        <View className="flex-1 bg-[#05070A]">
+        <View style={{ flex: 1, backgroundColor: '#05070A' }}>
             <StatusBar barStyle="light-content" />
             <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
                 <TopBar title="SoulLink" />
@@ -95,11 +160,7 @@ export default function HomeFeed() {
                                     borderBottomColor: active ? '#5EEAD4' : 'transparent',
                                 }}
                             >
-                                <Icon
-                                    size={16}
-                                    strokeWidth={1.8}
-                                    color={active ? '#5EEAD4' : '#64748B'}
-                                />
+                                <Icon size={16} strokeWidth={1.8} color={active ? '#5EEAD4' : '#64748B'} />
                                 <Text
                                     style={{
                                         fontSize: 15,
@@ -115,41 +176,212 @@ export default function HomeFeed() {
                 </View>
 
                 {/* Feed List */}
-                <FlatList
-                    data={MOCK_REFLECTIONS}
-                    keyExtractor={(item) => item.id}
-                    contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: 80 }}
-                    ListHeaderComponent={
-                        <View className="mb-6">
-                            <View className="flex-row items-center bg-white/5 border border-white/10 rounded-2xl px-4 py-3">
-                                <View className="w-10 h-10 rounded-full bg-[#5EEAD4]/20 items-center justify-center mr-3">
-                                    <Text className="text-[#5EEAD4] font-bold">A</Text>
+                {loading ? (
+                    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                        <Web3PulseLoader size={84} />
+                    </View>
+                ) : (
+                    <FlatList
+                        data={reflections}
+                        keyExtractor={(item) => item.id}
+                        contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: 100 }}
+                        refreshControl={
+                            <RefreshControl
+                                refreshing={refreshing}
+                                onRefresh={handleRefresh}
+                                tintColor="#5EEAD4"
+                            />
+                        }
+                        ListHeaderComponent={
+                            <TouchableOpacity
+                                onPress={() => setComposeVisible(true)}
+                                style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    backgroundColor: 'rgba(255,255,255,0.04)',
+                                    borderWidth: 1,
+                                    borderColor: 'rgba(255,255,255,0.08)',
+                                    borderRadius: 16,
+                                    paddingHorizontal: 16,
+                                    paddingVertical: 14,
+                                    marginBottom: 20,
+                                    gap: 12,
+                                }}
+                                activeOpacity={0.7}
+                            >
+                                <View
+                                    style={{
+                                        width: 38,
+                                        height: 38,
+                                        borderRadius: 19,
+                                        backgroundColor: 'rgba(94,234,212,0.15)',
+                                        borderWidth: 1,
+                                        borderColor: 'rgba(94,234,212,0.3)',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                    }}
+                                >
+                                    <Text style={{ color: '#5EEAD4', fontWeight: 'bold', fontSize: 15 }}>
+                                        {getAvatarInitial(user)}
+                                    </Text>
                                 </View>
-                                <TextInput
-                                    className="flex-1 text-white text-base"
-                                    placeholder="Share a reflection..."
-                                    placeholderTextColor="#64748B"
-                                    value={newReflection}
-                                    onChangeText={setNewReflection}
-                                    onSubmitEditing={handlePostReflection}
-                                />
-                                <TouchableOpacity onPress={handlePostReflection}>
-                                    <PlusCircle color={newReflection ? '#5EEAD4' : '#64748B'} size={24} />
+                                <Text style={{ flex: 1, color: '#475569', fontSize: 15 }}>
+                                    Share a reflection...
+                                </Text>
+                                <PlusCircle color="#5EEAD4" size={22} />
+                            </TouchableOpacity>
+                        }
+                        ListEmptyComponent={
+                            <View style={{ alignItems: 'center', paddingTop: 60 }}>
+                                <Text style={{ color: '#64748B', fontSize: 15, textAlign: 'center' }}>
+                                    {feedType === 'following'
+                                        ? 'Follow some people to see their reflections here.'
+                                        : 'No reflections yet. Be the first to share one!'}
+                                </Text>
+                            </View>
+                        }
+                        renderItem={({ item }) => (
+                            <ReflectionCard
+                                reflection={item}
+                                onCommentPress={() => router.push(`/reflection/${item.id}`)}
+                            />
+                        )}
+                        showsVerticalScrollIndicator={false}
+                    />
+                )}
+            </SafeAreaView>
+
+            {/* Compose Modal */}
+            <Modal
+                visible={composeVisible}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setComposeVisible(false)}
+            >
+                <KeyboardAvoidingView
+                    style={{ flex: 1 }}
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                >
+                    <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' }}>
+                        <View
+                            style={{
+                                backgroundColor: '#0F1219',
+                                borderTopLeftRadius: 32,
+                                borderTopRightRadius: 32,
+                                padding: 24,
+                                borderWidth: 1,
+                                borderColor: 'rgba(255,255,255,0.08)',
+                            }}
+                        >
+                            {/* Handle */}
+                            <View
+                                style={{
+                                    width: 40,
+                                    height: 4,
+                                    backgroundColor: 'rgba(255,255,255,0.15)',
+                                    borderRadius: 2,
+                                    alignSelf: 'center',
+                                    marginBottom: 20,
+                                }}
+                            />
+
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+                                <Text style={{ color: 'white', fontSize: 18, fontWeight: '700' }}>
+                                    New Reflection
+                                </Text>
+                                <TouchableOpacity onPress={() => setComposeVisible(false)}>
+                                    <X color="#64748B" size={22} />
                                 </TouchableOpacity>
                             </View>
+
+                            {/* Content Input */}
+                            <TextInput
+                                value={newPostText}
+                                onChangeText={setNewPostText}
+                                placeholder="What's on your mind or soul today?"
+                                placeholderTextColor="#475569"
+                                style={{
+                                    color: 'white',
+                                    fontSize: 16,
+                                    lineHeight: 24,
+                                    backgroundColor: 'rgba(255,255,255,0.04)',
+                                    borderWidth: 1,
+                                    borderColor: 'rgba(255,255,255,0.08)',
+                                    borderRadius: 16,
+                                    padding: 16,
+                                    minHeight: 120,
+                                    textAlignVertical: 'top',
+                                    marginBottom: 12,
+                                }}
+                                multiline
+                                autoFocus
+                            />
+
+                            {/* Tags Input */}
+                            <TextInput
+                                value={postTags}
+                                onChangeText={setPostTags}
+                                placeholder="Tags (comma-separated, e.g. Mindfulness, Web3)"
+                                placeholderTextColor="#475569"
+                                style={{
+                                    color: 'white',
+                                    fontSize: 14,
+                                    backgroundColor: 'rgba(255,255,255,0.04)',
+                                    borderWidth: 1,
+                                    borderColor: 'rgba(255,255,255,0.08)',
+                                    borderRadius: 12,
+                                    paddingHorizontal: 14,
+                                    paddingVertical: 12,
+                                    marginBottom: 20,
+                                }}
+                            />
+
+                            <TextInput
+                                value={postImages}
+                                onChangeText={setPostImages}
+                                placeholder="Image URLs (comma-separated, Cloudinary or image links)"
+                                placeholderTextColor="#475569"
+                                style={{
+                                    color: 'white',
+                                    fontSize: 14,
+                                    backgroundColor: 'rgba(255,255,255,0.04)',
+                                    borderWidth: 1,
+                                    borderColor: 'rgba(255,255,255,0.08)',
+                                    borderRadius: 12,
+                                    paddingHorizontal: 14,
+                                    paddingVertical: 12,
+                                    marginBottom: 20,
+                                }}
+                            />
+
+                            <TouchableOpacity
+                                onPress={handlePost}
+                                disabled={posting || !newPostText.trim()}
+                                style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 8,
+                                    backgroundColor: newPostText.trim() ? '#5EEAD4' : 'rgba(94,234,212,0.3)',
+                                    borderRadius: 24,
+                                    paddingVertical: 16,
+                                }}
+                            >
+                                {posting ? (
+                                    <ActivityIndicator color="#05070A" />
+                                ) : (
+                                    <>
+                                        <Send color="#05070A" size={18} />
+                                        <Text style={{ color: '#05070A', fontWeight: '700', fontSize: 16 }}>
+                                            Post Reflection
+                                        </Text>
+                                    </>
+                                )}
+                            </TouchableOpacity>
                         </View>
-                    }
-                    renderItem={({ item }) => (
-                        <ReflectionCard
-                            reflection={item}
-                            onCommentPress={() => {
-                                router.push(`/reflection/${item.id}`);
-                            }}
-                        />
-                    )}
-                    showsVerticalScrollIndicator={false}
-                />
-            </SafeAreaView>
+                    </View>
+                </KeyboardAvoidingView>
+            </Modal>
         </View>
     );
 }

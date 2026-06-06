@@ -15,7 +15,7 @@ export default function MessagesScreen() {
                 </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} className="flex-1 mt-2">
+            <ScrollView showsVerticalScrollIndicator={false} className="flex-1 mt-2" contentContainerStyle={{ paddingBottom: 120 }}>
 
                 {/* Chat List Item */}
                 <TouchableOpacity>

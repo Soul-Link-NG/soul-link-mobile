@@ -5,8 +5,10 @@ import React, {
   useState,
   useEffect,
 } from "react";
-import { useAppKit } from "@reown/appkit-react-native";
 import * as SecureStore from "expo-secure-store";
+
+import { appKit } from "../config/appkit.config";
+
 
 /**
  * Web3Context for Soul Link
@@ -42,8 +44,6 @@ const CHAIN_ID_KEY = "soul-link-chain-id";
  * Must be used inside the app layout, after Web3 is initialized
  */
 export function Web3Provider({ children }: { children: React.ReactNode }) {
-  const { open } = useAppKit();
-
   // Local state management since AppKit hooks aren't available
   const [address, setAddress] = useState<string | undefined>(undefined);
   const [chainId, setChainId] = useState<number | undefined>(undefined);
@@ -89,7 +89,7 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
       setIsConnecting(true);
       // AppKit's open() method opens the wallet selector modal
       // User selects and connects their wallet (Trust, Bybit, Phantom, etc.)
-      await open();
+      await appKit.open();
 
       // Note: After wallet connects, you'll need to manually set address and chainId
       // This would typically come from a callback or state listener in AppKit
@@ -100,10 +100,12 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsConnecting(false);
     }
-  }, [open]);
+  }, []);
 
   const disconnectWallet = useCallback(async () => {
     try {
+      await appKit.disconnect();
+
       setAddress(undefined);
       setChainId(undefined);
       await SecureStore.deleteItemAsync(WALLET_ADDRESS_KEY);

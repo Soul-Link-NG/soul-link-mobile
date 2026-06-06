@@ -9,28 +9,40 @@ import {
     Linking,
     Clipboard,
     Platform,
+    ScrollView,
+    Image,
+    useWindowDimensions,
 } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { useRouter } from 'expo-router';
-import { Heart, MessageCircle, Share2, Bookmark, CheckCircle2, X, Copy, Link } from 'lucide-react-native';
+import { Heart, MessageCircle, Bookmark, CheckCircle2, X, Copy, Link, Eye, ChevronRight } from 'lucide-react-native';
+import { api } from '../services/api';
+import { getAvatarInitial, getDisplayName } from '../utils/userIdentity';
+import Toast from 'react-native-toast-message';
 
 type ReflectionCardProps = {
     reflection: {
         id: string;
         content: string;
         imageUrl?: string;
+        imageUrls?: string[];
         topicTags: string[];
         createdAt: string;
-        author: {
+        author?: {
             username: string;
-            displayName: string;
+            displayName?: string | null;
             isVerified: boolean;
             avatarUrl?: string;
-        };
+        } | null;
         _count: {
             likes: number;
             comments: number;
         };
+        truthNote?: {
+            content: string;
+            reputationWeight: number;
+            status: string;
+        } | null;
     };
     onCommentPress?: () => void;
 };
@@ -42,18 +54,38 @@ export function ReflectionCard({ reflection, onCommentPress }: ReflectionCardPro
     const [likeCount, setLikeCount] = useState(reflection._count.likes);
     const [bookmarked, setBookmarked] = useState(false);
     const [shareVisible, setShareVisible] = useState(false);
+    const [truthVisible, setTruthVisible] = useState(false);
     const [linkCopied, setLinkCopied] = useState(false);
     const router = useRouter();
+    const { width } = useWindowDimensions();
 
     const postUrl = `${POST_BASE_URL}/${reflection.id}`;
+    const authorDisplayName = getDisplayName(reflection.author);
+    const authorUsername = reflection.author?.username || 'unknown';
+    const mediaUrls = reflection.imageUrls?.length
+        ? reflection.imageUrls
+        : reflection.imageUrl
+            ? [reflection.imageUrl]
+            : [];
+    const mediaWidth = Math.max(240, width - 88);
 
     // ── Like ──────────────────────────────────────────────
-    const handleLike = () => {
-        setLiked((prev) => {
-            const next = !prev;
-            setLikeCount((c) => (next ? c + 1 : c - 1));
-            return next;
-        });
+    const handleLike = async () => {
+        const next = !liked;
+        setLiked(next);
+        setLikeCount((c) => (next ? c + 1 : c - 1));
+        try {
+            if (next) {
+                await api.post(`/reflections/like/${reflection.id}`);
+            } else {
+                await api.delete(`/reflections/unlike/${reflection.id}`);
+            }
+        } catch (e) {
+            // revert on error
+            setLiked(!next);
+            setLikeCount((c) => (next ? c - 1 : c + 1));
+            console.warn('Like error', e);
+        }
     };
 
     // ── Bookmark ──────────────────────────────────────────
@@ -61,19 +93,23 @@ export function ReflectionCard({ reflection, onCommentPress }: ReflectionCardPro
         const next = !bookmarked;
         setBookmarked(next);
         try {
+            if (next) {
+                await api.post(`/reflections/bookmark/${reflection.id}`);
+            } else {
+                await api.delete(`/reflections/unbookmark/${reflection.id}`);
+            }
             const raw = await SecureStore.getItemAsync('bookmarks');
             const bookmarks: string[] = raw ? JSON.parse(raw) : [];
             if (next) {
                 if (!bookmarks.includes(reflection.id)) {
-                    bookmarks.push(reflection.id);
-                    await SecureStore.setItemAsync('bookmarks', JSON.stringify(bookmarks));
+                    await SecureStore.setItemAsync('bookmarks', JSON.stringify([...bookmarks, reflection.id]));
                 }
             } else {
-                const updated = bookmarks.filter((id) => id !== reflection.id);
-                await SecureStore.setItemAsync('bookmarks', JSON.stringify(updated));
+                await SecureStore.setItemAsync('bookmarks', JSON.stringify(bookmarks.filter((id) => id !== reflection.id)));
             }
         } catch (e) {
-            console.warn('Bookmark storage error', e);
+            setBookmarked(!next);
+            console.warn('Bookmark error', e);
         }
     };
 
@@ -115,6 +151,10 @@ export function ReflectionCard({ reflection, onCommentPress }: ReflectionCardPro
         setShareVisible(false);
     };
 
+    const suggestTruthNote = () => {
+        setTruthVisible(true);
+    };
+
     // ── Relative time ─────────────────────────────────────
     const relativeTime = (() => {
         const diff = Date.now() - new Date(reflection.createdAt).getTime();
@@ -133,24 +173,24 @@ export function ReflectionCard({ reflection, onCommentPress }: ReflectionCardPro
                     <TouchableOpacity 
                         className="flex-row items-center gap-3"
                         onPress={() => {
-                            if (reflection.author.username === 'abulex') {
+                            if (authorUsername === 'abulex') {
                                 router.push('/(tabs)/soul');
                             } else {
-                                router.push(`/profile/${reflection.author.username}`);
+                                router.push(`/profile/${authorUsername}`);
                             }
                         }}
                     >
                         <View className="w-10 h-10 rounded-full bg-[#5EEAD4]/20 items-center justify-center border border-[#5EEAD4]/30">
                             <Text className="text-[#5EEAD4] font-bold">
-                                {reflection.author.displayName[0]}
+                                {getAvatarInitial(reflection.author)}
                             </Text>
                         </View>
                         <View>
                             <View className="flex-row items-center gap-1">
-                                <Text className="text-white font-bold text-base">
-                                    {reflection.author.displayName}
+                                <Text className="text-white font-bold text-base" style={{ textTransform: 'lowercase' }}>
+                                    {authorDisplayName}
                                 </Text>
-                                {reflection.author.isVerified && (
+                                {reflection.author?.isVerified && (
                                     <CheckCircle2
                                         color="#5EEAD4"
                                         size={14}
@@ -160,12 +200,67 @@ export function ReflectionCard({ reflection, onCommentPress }: ReflectionCardPro
                                 )}
                             </View>
                             <Text className="text-slate-400 text-sm">
-                                @{reflection.author.username}
+                                @{authorUsername}
                             </Text>
                         </View>
                     </TouchableOpacity>
                     <Text className="text-slate-500 text-xs">{relativeTime}</Text>
                 </View>
+
+                {/* Media */}
+                {mediaUrls.length > 0 && (
+                    <View className="mb-4">
+                        <ScrollView
+                            horizontal
+                            pagingEnabled
+                            showsHorizontalScrollIndicator={false}
+                            nestedScrollEnabled
+                            contentContainerStyle={{ gap: 10 }}
+                        >
+                            {mediaUrls.map((uri, index) => (
+                                <View key={`${reflection.id}-${index}`} style={{ width: mediaWidth }}>
+                                    <Image
+                                        source={{ uri }}
+                                        style={{
+                                            width: mediaWidth,
+                                            height: 220,
+                                            borderRadius: 22,
+                                            backgroundColor: 'rgba(255,255,255,0.04)',
+                                        }}
+                                        resizeMode="cover"
+                                    />
+                                    {mediaUrls.length > 1 && index === 0 && (
+                                        <View
+                                            style={{
+                                                position: 'absolute',
+                                                right: 12,
+                                                top: 16,
+                                                backgroundColor: 'rgba(5,7,10,0.72)',
+                                                borderRadius: 999,
+                                                paddingHorizontal: 10,
+                                                paddingVertical: 6,
+                                                flexDirection: 'row',
+                                                alignItems: 'center',
+                                                gap: 4,
+                                            }}
+                                        >
+                                            <Text style={{ color: 'white', fontSize: 11, fontWeight: '700' }}>
+                                                Swipe
+                                            </Text>
+                                            <ChevronRight color="#5EEAD4" size={12} />
+                                        </View>
+                                    )}
+                                </View>
+                            ))}
+                        </ScrollView>
+
+                        {mediaUrls.length > 1 && (
+                            <Text className="text-slate-500 text-[11px] mt-2 text-center">
+                                Swipe to view all images
+                            </Text>
+                        )}
+                    </View>
+                )}
 
                 {/* Content */}
                 <TouchableOpacity onPress={() => router.push(`/reflection/${reflection.id}`)}>
@@ -220,9 +315,9 @@ export function ReflectionCard({ reflection, onCommentPress }: ReflectionCardPro
                         </Text>
                     </TouchableOpacity>
 
-                    {/* Share */}
-                    <TouchableOpacity onPress={openShare} activeOpacity={0.7}>
-                        <Share2 color="#94A3B8" size={20} strokeWidth={1.5} />
+                    {/* TruthNet */}
+                    <TouchableOpacity onPress={suggestTruthNote} onLongPress={suggestTruthNote} activeOpacity={0.7}>
+                        <Eye color="#5EEAD4" size={20} strokeWidth={1.5} />
                     </TouchableOpacity>
 
                     {/* Bookmark */}
@@ -340,9 +435,73 @@ export function ReflectionCard({ reflection, onCommentPress }: ReflectionCardPro
                                     className="items-center gap-2"
                                 >
                                     <View className="w-14 h-14 rounded-2xl items-center justify-center bg-[#5EEAD4]/10 border border-[#5EEAD4]/25">
-                                        <Share2 color="#5EEAD4" size={22} strokeWidth={1.5} />
+                                        <Link color="#5EEAD4" size={22} strokeWidth={1.5} />
                                     </View>
                                     <Text className="text-slate-400 text-xs">More</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </Pressable>
+                </Pressable>
+            </Modal>
+
+            {/* ── TruthNet Modal ─────────────────────────────────── */}
+            <Modal
+                visible={truthVisible}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setTruthVisible(false)}
+            >
+                <Pressable
+                    className="flex-1 justify-end bg-black/60"
+                    onPress={() => setTruthVisible(false)}
+                >
+                    <Pressable onPress={() => { }} className="rounded-t-3xl overflow-hidden">
+                        <View className="bg-[#0F1219] border-t border-white/10 px-6 pt-5 pb-10">
+                            <View className="w-10 h-1 bg-white/20 rounded-full self-center mb-5" />
+                            <View className="flex-row items-center justify-between mb-4">
+                                <View>
+                                    <Text className="text-white font-bold text-lg">TruthNet</Text>
+                                    <Text className="text-slate-400 text-xs mt-1">Suggest a community note for this reflection</Text>
+                                </View>
+                                <TouchableOpacity onPress={() => setTruthVisible(false)}>
+                                    <X color="#94A3B8" size={20} />
+                                </TouchableOpacity>
+                            </View>
+
+                            <View className="bg-white/5 border border-white/10 rounded-2xl p-4 mb-4">
+                                <Text className="text-slate-300 text-sm leading-6">
+                                    Your vote carries a Soul Weight based on karma and badges. This module will later submit evidence and community review.
+                                </Text>
+                            </View>
+
+                            {reflection.truthNote ? (
+                                <View className="bg-[#5EEAD4]/10 border border-[#5EEAD4]/20 rounded-2xl p-4 mb-4">
+                                    <Text className="text-[#5EEAD4] text-xs font-bold uppercase tracking-[1.5px] mb-1">
+                                        TruthNet Note
+                                    </Text>
+                                    <Text className="text-white text-sm leading-6 mb-2">
+                                        {reflection.truthNote.content}
+                                    </Text>
+                                    <Text className="text-slate-400 text-xs">
+                                        Reputation Weight: {reflection.truthNote.reputationWeight}
+                                    </Text>
+                                </View>
+                            ) : (
+                                <View className="bg-white/5 border border-white/10 rounded-2xl p-4 mb-4">
+                                    <Text className="text-white font-semibold mb-2">No note yet</Text>
+                                    <Text className="text-slate-400 text-sm leading-6">
+                                        Long press TruthNet to suggest a note with evidence.
+                                    </Text>
+                                </View>
+                            )}
+
+                            <View className="flex-row gap-3">
+                                <TouchableOpacity className="flex-1 bg-[#5EEAD4] py-4 rounded-2xl items-center">
+                                    <Text className="text-[#05070A] font-bold">Helpful</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity className="flex-1 bg-white/5 border border-white/10 py-4 rounded-2xl items-center">
+                                    <Text className="text-white font-bold">Not Helpful</Text>
                                 </TouchableOpacity>
                             </View>
                         </View>

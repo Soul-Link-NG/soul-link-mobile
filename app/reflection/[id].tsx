@@ -1,37 +1,59 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { PostDetail } from '../../src/components/PostDetail';
-
-// For now, we'll mock the data fetching. In a real app, this would come from a context or API.
-const MOCK_REFLECTIONS = [
-    {
-        id: '1',
-        content: 'The universe is not outside of you. Look inside everything that you want, you already are.',
-        topicTags: ['Mindfulness', 'Wisdom'],
-        createdAt: '2026-04-10T10:00:00Z',
-        author: { username: 'abulex', displayName: 'Abulex', isVerified: true },
-        _count: { likes: 42, comments: 12 },
-    },
-    {
-        id: '2',
-        content: 'Building a decentralized future for social connection. One reflection at a time. 🌐✨',
-        topicTags: ['Web3', 'SoulLink'],
-        createdAt: '2026-04-10T11:00:00Z',
-        author: { username: 'soulink', displayName: 'SoulLink', isVerified: true },
-        _count: { likes: 88, comments: 24 },
-    },
-];
+import { api } from '../../src/services/api';
+import { ActivityIndicator, View, Text } from 'react-native';
 
 export default function ReflectionDetailScreen() {
     const { id } = useLocalSearchParams();
     const router = useRouter();
+    const [reflection, setReflection] = useState<any>(null);
+    const [comments, setComments] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
 
-    const reflection = MOCK_REFLECTIONS.find(r => r.id === id) || MOCK_REFLECTIONS[0];
+    const fetchData = async () => {
+        try {
+            const [refResponse, commentsResponse] = await Promise.all([
+                api.get(`/reflections/${id}`),
+                api.get(`/reflections/${id}/comments`),
+            ]);
+            setReflection(refResponse.data);
+            setComments(commentsResponse.data);
+        } catch (error) {
+            console.error('Error fetching reflection details:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (id) {
+            fetchData();
+        }
+    }, [id]);
+
+    if (loading) {
+        return (
+            <View className="flex-1 bg-[#05070A] items-center justify-center">
+                <ActivityIndicator size="large" color="#5EEAD4" />
+            </View>
+        );
+    }
+
+    if (!reflection) {
+        return (
+            <View className="flex-1 bg-[#05070A] items-center justify-center p-6">
+                <Text className="text-white text-lg mb-4">Reflection not found</Text>
+            </View>
+        );
+    }
 
     return (
         <PostDetail 
             reflection={reflection} 
+            comments={comments}
             onBack={() => router.back()} 
+            onRefresh={fetchData}
         />
     );
 }

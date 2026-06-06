@@ -1,291 +1,297 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Modal, TextInput, ActivityIndicator } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import {
+    View, Text, ScrollView, FlatList, TouchableOpacity,
+    Modal, TextInput, ActivityIndicator, RefreshControl,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Settings, Share2, Grid, Bookmark, MessageSquare, CheckCircle2, X, Search, Wallet, Check } from 'lucide-react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import {
+    Grid, Bookmark, MessageSquare, CheckCircle2, X, Search, Users,
+} from 'lucide-react-native';
 import { ReflectionCard } from '../../src/components/ReflectionCard';
 import { TopBar } from '../../components/TopBar';
-import { COLORS } from '../../constants/Theme';
-import { useWeb3 } from '../../src/context/Web3Context';
+import { useAuth } from '../../src/context/AuthContext';
+import { api } from '../../src/services/api';
+import { SoulOrb } from '../../components/SoulOrb';
+import { getAvatarInitial, getDisplayName, getSoulId } from '../../src/utils/userIdentity';
+import Toast from 'react-native-toast-message';
 
-const MOCK_USER = {
-    username: 'abulex',
-    displayName: 'Abulex',
-    isVerified: true,
-    bio: 'Building mindful, decentralized social experiences. Exploring the intersection of Web3 and well-being.',
-    stats: { reflections: 124, followers: '12.5k', following: '450' },
-};
-
-const MOCK_MY_REFLECTIONS = [
-    {
-        id: '1',
-        content: 'The universe is not outside of you. Look inside everything that you want, you already are.',
-        topicTags: ['Mindfulness', 'Wisdom'],
-        createdAt: '2026-04-10T10:00:00Z',
-        author: { username: 'abulex', displayName: 'Abulex', isVerified: true },
-        _count: { likes: 42, comments: 12 },
-    },
-];
-
-const MOCK_FOLLOWERS = [
-    { username: 'zen_master', displayName: 'Zen Master' },
-    { username: 'philosopher_king', displayName: 'Phil' },
-    { username: 'soulink', displayName: 'SoulLink' },
-];
+function Avatar({ name, size = 40 }: { name: string; size?: number }) {
+    return (
+        <View style={{
+            width: size, height: size, borderRadius: size / 2,
+            backgroundColor: 'rgba(94,234,212,0.15)',
+            borderWidth: 1.5, borderColor: 'rgba(94,234,212,0.3)',
+            alignItems: 'center', justifyContent: 'center',
+        }}>
+            <Text style={{ color: '#5EEAD4', fontWeight: 'bold', fontSize: size * 0.38 }}>
+                {(name || '?')[0].toUpperCase()}
+            </Text>
+        </View>
+    );
+}
 
 export default function ProfileScreen() {
-    const [activeTab, setActiveTab] = useState<'reflections' | 'bookmarks' | 'tags'>('reflections');
-    const [isEditModalVisible, setIsEditModalVisible] = useState(false);
-    const [isWalletModalVisible, setIsWalletModalVisible] = useState(false);
-    const [isUserListModalVisible, setIsUserListModalVisible] = useState(false);
-    const [userListType, setUserListType] = useState<'Followers' | 'Following'>('Followers');
-    const [searchQuery, setSearchQuery] = useState('');
-    const [isLinked, setIsLinked] = useState(false);
-    const [isLinking, setIsLinking] = useState(false);
+    const { user: authUser } = useAuth();
     const router = useRouter();
-    
-    const [displayName, setDisplayName] = useState(MOCK_USER.displayName);
-    const [bio, setBio] = useState(MOCK_USER.bio);
-    
-    // Get wallet info from Web3Context
-    const { address, chainName, disconnectWallet } = useWeb3();
 
-    const soulRightContent = (
-        <TouchableOpacity
-            style={{ padding: 9, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', marginRight: 4 }}
-            activeOpacity={0.7}
-        >
-            <Share2 color={COLORS.textSecondary} size={19} />
-        </TouchableOpacity>
-    );
+    const [profile, setProfile] = useState<any>(null);
+    const [reflections, setReflections] = useState<any[]>([]);
+    const [bookmarks, setBookmarks] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [activeTab, setActiveTab] = useState<'reflections' | 'bookmarks' | 'messages'>('reflections');
 
-    const handleLinkWallet = () => {
-        setIsLinking(true);
-        setTimeout(() => {
-            setIsLinking(false);
-            setIsLinked(true);
-            setTimeout(() => setIsWalletModalVisible(false), 1500);
-        }, 2000);
+    // Followers/Following modal
+    const [userListVisible, setUserListVisible] = useState(false);
+    const [userListType, setUserListType] = useState<'Followers' | 'Following'>('Followers');
+    const [userList, setUserList] = useState<any[]>([]);
+    const [userListLoading, setUserListLoading] = useState(false);
+    const [userListSearch, setUserListSearch] = useState('');
+
+    const fetchData = async () => {
+        if (!authUser?.id) return;
+        try {
+            const [profileRes, reflRes, bookRes] = await Promise.all([
+                api.get('/profile/me'),
+                api.get(`/reflections/user/${authUser.id}`),
+                api.get('/reflections/bookmarks'),
+            ]);
+            setProfile(profileRes.data);
+            setReflections(reflRes.data);
+            setBookmarks(bookRes.data);
+        } catch (e) {
+            console.error('Soul fetch error', e);
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
     };
 
-    const filteredUsers = MOCK_FOLLOWERS.filter(u => 
-        u.displayName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        u.username.toLowerCase().includes(searchQuery.toLowerCase())
+    useFocusEffect(
+        useCallback(() => {
+            setLoading(true);
+            fetchData();
+        }, [authUser?.id])
     );
 
+    const openUserList = async (type: 'Followers' | 'Following') => {
+        setUserListType(type);
+        setUserListSearch('');
+        setUserListVisible(true);
+        setUserListLoading(true);
+        try {
+            const endpoint = type === 'Followers'
+                ? `/social/followers/${authUser!.id}`
+                : `/social/following/${authUser!.id}`;
+            const res = await api.get(endpoint);
+            setUserList(res.data);
+        } catch (e) {
+            console.error('User list error', e);
+            Toast.show({ type: 'error', text1: 'Failed to load list' });
+        } finally {
+            setUserListLoading(false);
+        }
+    };
+
+    const filteredUserList = userList.filter(u => {
+        const name = getDisplayName(u).toLowerCase();
+        const usernameMatch = u.username?.toLowerCase().includes(userListSearch.toLowerCase()) ?? false;
+        return name.includes(userListSearch.toLowerCase()) || usernameMatch;
+    });
+
+    const identity = profile || authUser;
+    const displayName = getDisplayName(identity);
+    const username = profile?.username || authUser?.username || '';
+    const bio = profile?.bio || authUser?.bio || '';
+    const stats = profile?._count || { reflections: 0, followers: 0, following: 0 };
+    const karmaBalance = profile?.karmaBalance ?? authUser?.karmaBalance ?? 0;
+    const referralCount = profile?.referralCount ?? authUser?.referralCount ?? 0;
+    const soulId = getSoulId(identity);
+
+    if (loading) {
+        return (
+            <View style={{ flex: 1, backgroundColor: '#05070A', alignItems: 'center', justifyContent: 'center' }}>
+                <ActivityIndicator size="large" color="#5EEAD4" />
+            </View>
+        );
+    }
+
     return (
-        <View className="flex-1 bg-[#05070A]">
+        <View style={{ flex: 1, backgroundColor: '#05070A' }}>
             <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
-                <TopBar title="Soul" rightContent={soulRightContent} />
+                <TopBar title="Soul" />
 
-                <ScrollView showsVerticalScrollIndicator={false}>
-                    {/* Profile Info */}
-                    <View className="px-6 items-center mt-4">
-                        <View className="w-24 h-24 rounded-full bg-[#5EEAD4]/20 items-center justify-center border-2 border-[#5EEAD4] mb-4">
-                            <Text className="text-[#5EEAD4] text-3xl font-bold">{displayName[0]}</Text>
-                        </View>
-                        <View className="flex-row items-center space-x-1 mb-1">
-                            <Text className="text-white text-2xl font-bold">{displayName}</Text>
-                            <CheckCircle2 color="#5EEAD4" size={20} fill="#5EEAD4" stroke="#05070A" />
-                        </View>
-                        <Text className="text-slate-500 text-base mb-4">@{MOCK_USER.username}</Text>
-                        <Text className="text-slate-300 text-center text-base px-4 leading-relaxed">{bio}</Text>
-                    </View>
-
-                    {/* Stats */}
-                    <View className="flex-row justify-around px-10 py-8">
-                        <View className="items-center">
-                            <Text className="text-white text-xl font-bold">{MOCK_USER.stats.reflections}</Text>
-                            <Text className="text-slate-500 text-sm">Reflections</Text>
-                        </View>
-                        <TouchableOpacity 
-                            onPress={() => { setUserListType('Followers'); setIsUserListModalVisible(true); }}
-                            className="items-center"
-                        >
-                            <Text className="text-white text-xl font-bold">{MOCK_USER.stats.followers}</Text>
-                            <Text className="text-slate-500 text-sm">Followers</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                            onPress={() => { setUserListType('Following'); setIsUserListModalVisible(true); }}
-                            className="items-center"
-                        >
-                            <Text className="text-white text-xl font-bold">{MOCK_USER.stats.following}</Text>
-                            <Text className="text-slate-500 text-sm">Following</Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    {/* Action Buttons */}
-                    <View className="px-6 flex-row space-x-3 mb-8">
-                        <TouchableOpacity 
-                            onPress={() => setIsEditModalVisible(true)}
-                            className="flex-1 bg-[#5EEAD4] py-3 rounded-2xl"
-                        >
-                            <Text className="text-[#05070A] text-center font-bold">Edit Profile</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                            onPress={() => setIsWalletModalVisible(true)}
-                            className="flex-1 bg-white/5 border border-white/10 py-3 rounded-2xl"
-                        >
-                            <Text className="text-white text-center font-bold">{isLinked ? 'Wallet Linked' : 'Link Wallet'}</Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    {/* Tabs */}
-                    <View className="flex-row border-b border-white/5 mb-6">
-                        <TouchableOpacity onPress={() => setActiveTab('reflections')} className={`flex-1 items-center py-4 border-b-2 ${activeTab === 'reflections' ? 'border-[#5EEAD4]' : 'border-transparent'}`}>
-                            <Grid color={activeTab === 'reflections' ? '#5EEAD4' : '#94A3B8'} size={20} />
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => setActiveTab('bookmarks')} className={`flex-1 items-center py-4 border-b-2 ${activeTab === 'bookmarks' ? 'border-[#5EEAD4]' : 'border-transparent'}`}>
-                            <Bookmark color={activeTab === 'bookmarks' ? '#5EEAD4' : '#94A3B8'} size={20} />
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => setActiveTab('tags')} className={`flex-1 items-center py-4 border-b-2 ${activeTab === 'tags' ? 'border-[#5EEAD4]' : 'border-transparent'}`}>
-                            <MessageSquare color={activeTab === 'tags' ? '#5EEAD4' : '#94A3B8'} size={20} />
-                        </TouchableOpacity>
-                    </View>
-
-                    {/* Content */}
-                    <View className="px-6 pb-20">
-                        {activeTab === 'reflections' ? (
-                            MOCK_MY_REFLECTIONS.map(item => <ReflectionCard key={item.id} reflection={item} />)
-                        ) : activeTab === 'bookmarks' ? (
-                            <View className="items-center py-20">
-                                <Bookmark color="#1F2937" size={48} className="mb-4" />
-                                <Text className="text-slate-500">Your saved reflections will appear here.</Text>
+                <FlatList
+                    data={activeTab === 'reflections' ? reflections : activeTab === 'bookmarks' ? bookmarks : []}
+                    keyExtractor={(item) => item.id}
+                    showsVerticalScrollIndicator={false}
+                    refreshControl={
+                        <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} tintColor="#5EEAD4" />
+                    }
+                    contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 100 }}
+                    ListHeaderComponent={
+                        <View>
+                            {/* Avatar + Name */}
+                            <View style={{ alignItems: 'center', marginTop: 16, marginBottom: 20 }}>
+                                <SoulOrb size={150} connected={Boolean(authUser?.walletAddress)} karmaBalance={karmaBalance} />
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 18, marginBottom: 4 }}>
+                                    <Text style={{ color: 'white', fontSize: 22, fontWeight: '800', textTransform: 'lowercase' }}>{displayName}</Text>
+                                    {profile?.isVerified && <CheckCircle2 color="#5EEAD4" size={20} fill="#5EEAD4" stroke="#05070A" />}
+                                </View>
+                                <Text style={{ color: '#64748B', fontSize: 15, marginBottom: 6 }}>@{username}</Text>
+                                {soulId ? (
+                                    <Text style={{ color: '#5EEAD4', fontSize: 13, fontWeight: '700', marginBottom: 10, textTransform: 'lowercase' }}>{soulId}</Text>
+                                ) : null}
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                                    <View style={{ backgroundColor: 'rgba(94,234,212,0.08)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 }}>
+                                        <Text style={{ color: '#5EEAD4', fontSize: 11, fontWeight: '700' }}>{karmaBalance} KARMA</Text>
+                                    </View>
+                                    <View style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 }}>
+                                        <Text style={{ color: '#CBD5E1', fontSize: 11, fontWeight: '700' }}>{referralCount} referrals</Text>
+                                    </View>
+                                </View>
+                                {bio ? (
+                                    <Text style={{ color: '#94A3B8', textAlign: 'center', fontSize: 14, lineHeight: 21, paddingHorizontal: 20 }}>{bio}</Text>
+                                ) : null}
                             </View>
-                        ) : (
-                            <View className="items-center py-20">
-                                <MessageSquare color="#1F2937" size={48} className="mb-4" />
-                                <Text className="text-slate-500">Your tags and mentions will appear here.</Text>
+
+                            {/* Stats */}
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-around', paddingHorizontal: 20, paddingVertical: 16, backgroundColor: '#0F1219', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', marginBottom: 20 }}>
+                                <View style={{ alignItems: 'center' }}>
+                                    <Text style={{ color: 'white', fontSize: 20, fontWeight: '800' }}>{stats.reflections}</Text>
+                                    <Text style={{ color: '#64748B', fontSize: 12, marginTop: 2 }}>Reflections</Text>
+                                </View>
+                                <TouchableOpacity style={{ alignItems: 'center' }} onPress={() => openUserList('Followers')}>
+                                    <Text style={{ color: 'white', fontSize: 20, fontWeight: '800' }}>{stats.followers}</Text>
+                                    <Text style={{ color: '#64748B', fontSize: 12, marginTop: 2 }}>Followers</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={{ alignItems: 'center' }} onPress={() => openUserList('Following')}>
+                                    <Text style={{ color: 'white', fontSize: 20, fontWeight: '800' }}>{stats.following}</Text>
+                                    <Text style={{ color: '#64748B', fontSize: 12, marginTop: 2 }}>Following</Text>
+                                </TouchableOpacity>
                             </View>
-                        )}
-                    </View>
-                </ScrollView>
+
+                            {/* Content Tabs */}
+                            <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)', marginBottom: 16 }}>
+                                {([
+                                    { key: 'reflections', Icon: Grid },
+                                    { key: 'bookmarks', Icon: Bookmark },
+                                    { key: 'messages', Icon: MessageSquare },
+                                ] as const).map(({ key, Icon }) => (
+                                    <TouchableOpacity
+                                        key={key}
+                                        onPress={() => setActiveTab(key)}
+                                        style={{
+                                            flex: 1, alignItems: 'center', paddingVertical: 14,
+                                            borderBottomWidth: 2,
+                                            borderBottomColor: activeTab === key ? '#5EEAD4' : 'transparent',
+                                        }}
+                                    >
+                                        <Icon color={activeTab === key ? '#5EEAD4' : '#475569'} size={20} />
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+
+                            {/* Empty states for bookmarks / messages */}
+                            {activeTab === 'bookmarks' && bookmarks.length === 0 && (
+                                <View style={{ alignItems: 'center', paddingVertical: 60 }}>
+                                    <Bookmark color="#1F2937" size={48} />
+                                    <Text style={{ color: '#64748B', marginTop: 12, fontSize: 14 }}>Your saved reflections will appear here.</Text>
+                                </View>
+                            )}
+                            {activeTab === 'messages' && (
+                                <View style={{ alignItems: 'center', paddingVertical: 60 }}>
+                                    <Users color="#1F2937" size={48} />
+                                    <Text style={{ color: '#64748B', marginTop: 12, fontSize: 14 }}>Messages coming soon.</Text>
+                                </View>
+                            )}
+                            {activeTab === 'reflections' && reflections.length === 0 && (
+                                <View style={{ alignItems: 'center', paddingVertical: 60 }}>
+                                    <Grid color="#1F2937" size={48} />
+                                    <Text style={{ color: '#64748B', marginTop: 12, fontSize: 14 }}>No reflections posted yet.</Text>
+                                </View>
+                            )}
+                        </View>
+                    }
+                    renderItem={({ item }) =>
+                        activeTab !== 'messages' ? (
+                            <ReflectionCard
+                                reflection={item}
+                                onCommentPress={() => router.push(`/reflection/${item.id}`)}
+                            />
+                        ) : null
+                    }
+                />
             </SafeAreaView>
 
-            {/* Edit Profile Modal */}
-            <Modal visible={isEditModalVisible} animationType="slide" transparent>
-                <View className="flex-1 justify-end bg-black/60">
-                    <View className="bg-[#0F1219] rounded-t-3xl p-6 border-t border-white/10">
-                        <View className="flex-row justify-between items-center mb-6">
-                            <Text className="text-white text-xl font-bold">Edit Profile</Text>
-                            <TouchableOpacity onPress={() => setIsEditModalVisible(false)}>
-                                <X color="white" size={24} />
-                            </TouchableOpacity>
-                        </View>
-                        
-                        <Text className="text-slate-400 mb-2">Display Name</Text>
-                        <TextInput 
-                            className="bg-white/5 border border-white/10 rounded-xl p-4 text-white mb-4"
-                            value={displayName}
-                            onChangeText={setDisplayName}
-                        />
-                        
-                        <Text className="text-slate-400 mb-2">Bio</Text>
-                        <TextInput 
-                            className="bg-white/5 border border-white/10 rounded-xl p-4 text-white mb-8 h-24"
-                            multiline
-                            value={bio}
-                            onChangeText={setBio}
-                        />
-                        
-                        <TouchableOpacity 
-                            onPress={() => setIsEditModalVisible(false)}
-                            className="bg-[#5EEAD4] py-4 rounded-2xl"
-                        >
-                            <Text className="text-[#05070A] text-center font-bold">Save Changes</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </Modal>
-
-            {/* Link Wallet Modal */}
-            <Modal visible={isWalletModalVisible} animationType="fade" transparent>
-                <View className="flex-1 justify-center items-center bg-black/80 px-6">
-                    <View className="bg-[#0F1219] rounded-3xl p-8 border border-white/10 w-full items-center">
-                        <View className="w-16 h-16 rounded-full bg-[#5EEAD4]/20 items-center justify-center mb-6">
-                            <Wallet color="#5EEAD4" size={32} />
-                        </View>
-                        <Text className="text-white text-2xl font-bold mb-2">Link Your Wallet</Text>
-                        <Text className="text-slate-400 text-center mb-8">Connect your wallet to enable Web3 features and identity ownership.</Text>
-                        
-                        {isLinking ? (
-                            <View className="items-center">
-                                <ActivityIndicator color="#5EEAD4" size="large" />
-                                <Text className="text-[#5EEAD4] mt-4 font-bold">Connecting to Provider...</Text>
-                            </View>
-                        ) : isLinked ? (
-                            <View className="items-center">
-                                <View className="bg-[#5EEAD4] rounded-full p-2 mb-4">
-                                    <Check color="#05070A" size={32} />
-                                </View>
-                                <Text className="text-[#5EEAD4] font-bold">Wallet Successfully Linked!</Text>
-                            </View>
-                        ) : (
-                            <TouchableOpacity 
-                                onPress={handleLinkWallet}
-                                className="bg-[#5EEAD4] py-4 rounded-2xl w-full"
-                            >
-                                <Text className="text-[#05070A] text-center font-bold">Connect Wallet</Text>
-                            </TouchableOpacity>
-                        )}
-                        
-                        {!isLinking && !isLinked && (
-                            <TouchableOpacity onPress={() => setIsWalletModalVisible(false)} className="mt-4">
-                                <Text className="text-slate-500 font-bold">Cancel</Text>
-                            </TouchableOpacity>
-                        )}
-                    </View>
-                </View>
-            </Modal>
-
-            {/* Followers/Following Modal */}
-            <Modal visible={isUserListModalVisible} animationType="slide" transparent>
-                <View className="flex-1 bg-[#05070A]">
+            {/* Followers / Following Modal */}
+            <Modal visible={userListVisible} animationType="slide" transparent onRequestClose={() => setUserListVisible(false)}>
+                <View style={{ flex: 1, backgroundColor: '#05070A' }}>
                     <SafeAreaView style={{ flex: 1 }}>
-                        <View className="flex-row items-center justify-between px-6 py-4 border-b border-white/5">
-                            <Text className="text-white text-xl font-bold">{userListType}</Text>
-                            <TouchableOpacity onPress={() => setIsUserListModalVisible(false)}>
-                                <X color="white" size={24} />
+                        {/* Header */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' }}>
+                            <Text style={{ color: 'white', fontSize: 18, fontWeight: '700' }}>{userListType}</Text>
+                            <TouchableOpacity onPress={() => setUserListVisible(false)}>
+                                <X color="white" size={22} />
                             </TouchableOpacity>
                         </View>
-                        
-                        <View className="px-6 py-4">
-                            <View className="flex-row items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3">
-                                <Search color="#64748B" size={20} />
-                                <TextInput 
-                                    className="flex-1 ml-3 text-white text-base"
-                                    placeholder={`Search ${userListType.toLowerCase()}...`}
-                                    placeholderTextColor="#64748B"
-                                    value={searchQuery}
-                                    onChangeText={setSearchQuery}
+
+                        {/* Search */}
+                        <View style={{ paddingHorizontal: 24, paddingVertical: 12 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11, gap: 10 }}>
+                                <Search color="#64748B" size={16} />
+                                <TextInput
+                                    value={userListSearch}
+                                    onChangeText={setUserListSearch}
+                                    placeholder={`Search ${userListType.toLowerCase()}…`}
+                                    placeholderTextColor="#475569"
+                                    style={{ flex: 1, color: 'white', fontSize: 15 }}
                                 />
                             </View>
                         </View>
-                        
-                        <ScrollView className="px-6">
-                            {filteredUsers.map(user => (
-                                <View key={user.username} className="flex-row items-center justify-between py-4 border-b border-white/5">
-                                    <View className="flex-row items-center space-x-3">
-                                        <View className="w-12 h-12 rounded-full bg-white/10 items-center justify-center">
-                                            <Text className="text-white font-bold">{user.displayName[0]}</Text>
-                                        </View>
-                                        <View>
-                                            <Text className="text-white font-bold">{user.displayName}</Text>
-                                            <Text className="text-slate-500">@{user.username}</Text>
-                                        </View>
+
+                        {userListLoading ? (
+                            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                                <ActivityIndicator size="large" color="#5EEAD4" />
+                            </View>
+                        ) : (
+                            <FlatList
+                                data={filteredUserList}
+                                keyExtractor={(item) => item.id}
+                                contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}
+                                ListEmptyComponent={
+                                    <View style={{ alignItems: 'center', paddingTop: 40 }}>
+                                        <Text style={{ color: '#64748B' }}>No results found</Text>
                                     </View>
-                                    <TouchableOpacity 
+                                }
+                                renderItem={({ item }) => (
+                                    <TouchableOpacity
                                         onPress={() => {
-                                            setIsUserListModalVisible(false);
-                                            router.push(`/profile/${user.username}`);
+                                            setUserListVisible(false);
+                                            router.push(`/profile/${item.username}`);
                                         }}
-                                        className="bg-white/5 border border-white/10 px-4 py-2 rounded-xl"
+                                        style={{
+                                            flexDirection: 'row', alignItems: 'center',
+                                            paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)',
+                                            gap: 14,
+                                        }}
                                     >
-                                        <Text className="text-white font-bold text-xs">Profile</Text>
+                                        <Avatar name={getDisplayName(item)} size={44} />
+                                        <View style={{ flex: 1 }}>
+                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                                                <Text style={{ color: 'white', fontWeight: '700', fontSize: 15, textTransform: 'lowercase' }}>
+                                                    {getDisplayName(item)}
+                                                </Text>
+                                                {item.isVerified && <CheckCircle2 color="#5EEAD4" size={13} fill="#5EEAD4" stroke="#05070A" />}
+                                            </View>
+                                            <Text style={{ color: '#64748B', fontSize: 13 }}>@{item.username}</Text>
+                                        </View>
                                     </TouchableOpacity>
-                                </View>
-                            ))}
-                        </ScrollView>
+                                )}
+                            />
+                        )}
                     </SafeAreaView>
                 </View>
             </Modal>

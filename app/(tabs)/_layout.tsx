@@ -1,6 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
 import { Tabs } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Home, Compass, User, Wallet, Settings } from 'lucide-react-native';
 import { COLORS } from '../../constants/Theme';
 
@@ -21,6 +22,8 @@ function TabIcon({ Icon, color, focused, size }: { Icon: any, color: string, foc
 }
 
 export default function TabLayout() {
+    const insets = useSafeAreaInsets();
+
     return (
         <Tabs
             screenOptions={{
@@ -29,9 +32,9 @@ export default function TabLayout() {
                     backgroundColor: '#05070A',
                     borderTopWidth: 1,
                     borderTopColor: 'rgba(255,255,255,0.05)',
-                    height: 85,
-                    paddingBottom: 25,
-                    paddingTop: 0,
+                    height: 68 + insets.bottom,
+                    paddingBottom: Math.max(12, insets.bottom),
+                    paddingTop: 8,
                     elevation: 0,
                     shadowOpacity: 0,
                 },

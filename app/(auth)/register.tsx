@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft, Mail, Lock, User, Wallet } from 'lucide-react-native';
 import { useAuth } from '../../src/context/AuthContext';
+import { api } from "../../src/services/api";
+import Toast from "react-native-toast-message";
 
 export default function RegisterScreen() {
     const [formData, setFormData] = useState({
@@ -12,19 +14,45 @@ export default function RegisterScreen() {
         username: '',
         displayName: '',
     });
+    const [loading, setLoading] = useState(false);
     const { login } = useAuth();
     const router = useRouter();
 
     const handleRegister = async () => {
-        // Mock API call to register user
-        // In a real app, this would use the POST /auth/register endpoint
-        await login('mock-token', {
-            id: '1',
-            email: formData.email,
-            username: formData.username,
-            displayName: formData.displayName,
-            profileCompleted: false, // Redirect to onboarding
-        });
+        if (!formData.email || !formData.password || !formData.username) {
+            Toast.show({
+                type: 'error',
+                text1: 'Required',
+                text2: 'Please fill in Email, Password, and Username.',
+            });
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const response = await api.post('/auth/register', {
+                email: formData.email,
+                password: formData.password,
+                username: formData.username,
+                displayName: formData.displayName || undefined,
+            });
+
+            await login(response.data.token, response.data.user);
+            Toast.show({
+                type: 'success',
+                text1: 'Success',
+                text2: 'Account created successfully!',
+            });
+        } catch (error: any) {
+            console.error('Registration error:', error);
+            Toast.show({
+                type: 'error',
+                text1: 'Registration Failed',
+                text2: error.response?.data?.message || 'Something went wrong',
+            });
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -97,9 +125,14 @@ export default function RegisterScreen() {
 
                             <TouchableOpacity 
                                 onPress={handleRegister}
-                                className="bg-[#5EEAD4] py-5 rounded-3xl mt-6 shadow-lg shadow-[#5EEAD4]/20"
+                                disabled={loading}
+                                className={`py-5 rounded-3xl mt-6 shadow-lg ${loading ? 'bg-[#5EEAD4]/50' : 'bg-[#5EEAD4] shadow-[#5EEAD4]/20'}`}
                             >
-                                <Text className="text-[#05070A] text-center font-bold text-lg">Create Account</Text>
+                                {loading ? (
+                                    <ActivityIndicator color="#05070A" />
+                                ) : (
+                                    <Text className="text-[#05070A] text-center font-bold text-lg">Create Account</Text>
+                                )}
                             </TouchableOpacity>
 
                             <View className="flex-row justify-center mt-6">
@@ -115,3 +148,4 @@ export default function RegisterScreen() {
         </View>
     );
 }
+
