@@ -1,7 +1,10 @@
 import "@walletconnect/react-native-compat";
 import "react-native-get-random-values";
+import "../global.css";
 import { Buffer } from "buffer";
-if (typeof global.Buffer === "undefined") { global.Buffer = Buffer; }
+if (typeof global.Buffer === "undefined") {
+  global.Buffer = Buffer;
+}
 
 import "react-native-gesture-handler";
 import React, { useEffect, useState } from "react";
@@ -18,7 +21,6 @@ import "../src/config/appkit.config";
 import { AuthProvider, useAuth } from "../src/context/AuthContext";
 import { Web3Provider } from "../src/context/Web3Context";
 import { AnimatedSplashScreen } from "../components/AnimatedSplashScreen";
-import "../global.css";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
