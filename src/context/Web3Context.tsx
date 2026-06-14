@@ -87,13 +87,11 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
   const connectWallet = useCallback(async () => {
     try {
       setIsConnecting(true);
-      // AppKit's open() method opens the wallet selector modal
-      // User selects and connects their wallet (Trust, Bybit, Phantom, etc.)
+      if (!appKit) {
+        console.warn("AppKit is not initialized. Set EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID in .env");
+        return;
+      }
       await appKit.open();
-
-      // Note: After wallet connects, you'll need to manually set address and chainId
-      // This would typically come from a callback or state listener in AppKit
-      // For now, this is handled by the login flow in walletAuth.ts
     } catch (error) {
       console.error("Failed to connect wallet:", error);
       throw error;
@@ -104,7 +102,9 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
 
   const disconnectWallet = useCallback(async () => {
     try {
-      await appKit.disconnect();
+      if (appKit) {
+        await appKit.disconnect();
+      }
 
       setAddress(undefined);
       setChainId(undefined);

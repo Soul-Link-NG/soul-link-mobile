@@ -19,7 +19,7 @@
       "distribution": "internal",
       "node": "22.13.0",
       "env": {
-        "NPM_CONFIG_LEGACY_PEPS": "true"
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
       },
       "android": {
         "buildType": "apk",

@@ -6,14 +6,12 @@ module.exports = function (api) {
         "babel-preset-expo",
         {
           jsxImportSource: "nativewind",
-          jsxRuntime: "automatic", // Force the modern runtime
         },
       ],
-      "nativewind/babel",
     ],
     plugins: [
-      "react-native-worklets-core/plugin",
-      "react-native-reanimated/plugin",
+      // "nativewind/babel", <--- REMOVE THIS LINE
+      "react-native-reanimated/plugin", // Keep this at the bottom
     ],
   };
 };

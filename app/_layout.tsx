@@ -1,22 +1,21 @@
+import "../global.css";
 import "@walletconnect/react-native-compat";
 import "react-native-get-random-values";
-import "../global.css";
 import { Buffer } from "buffer";
 if (typeof global.Buffer === "undefined") {
   global.Buffer = Buffer;
 }
 
 import "react-native-gesture-handler";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as SplashScreen from "expo-splash-screen";
 import Toast from "react-native-toast-message";
-
-// Initialize AppKit at the root
-import "../src/config/appkit.config";
+import { AppKit, AppKitProvider } from "@reown/appkit-react-native";
+import { appKit } from "../src/config/appkit.config";
 
 import { AuthProvider, useAuth } from "../src/context/AuthContext";
 import { Web3Provider } from "../src/context/Web3Context";
@@ -33,24 +32,39 @@ function NavigationNavigator({ isAppUiReady }: { isAppUiReady: boolean }) {
   const router = useRouter();
 
   useEffect(() => {
+    console.log("[NAV] Effect fired:", {
+      isAuthLoading,
+      isAppUiReady,
+      segments,
+      token: !!token,
+    });
     if (isAuthLoading || !isAppUiReady) return;
 
     const inAuthGroup = segments[0] === "(auth)";
     const inOnboardingGroup = segments[0] === "onboarding";
+    console.log("[NAV] Deciding route:", {
+      inAuthGroup,
+      inOnboardingGroup,
+      hasToken: !!token,
+      profileCompleted: user?.profileCompleted,
+    });
 
     if (!token) {
       // 1. If not logged in, force them to the landing screen
       if (!inAuthGroup) {
+        console.log("[NAV] → Redirecting to /(auth)/landing");
         router.replace("/(auth)/landing");
       }
     } else if (!user?.profileCompleted) {
       // 2. If logged in but onboarding is incomplete, force them to setup
       if (!inOnboardingGroup) {
+        console.log("[NAV] → Redirecting to /onboarding/setup");
         router.replace("/onboarding/setup");
       }
     } else {
       // 3. If logged in and onboarding is complete, keep them in tabs
       if (inAuthGroup || inOnboardingGroup || !segments[0]) {
+        console.log("[NAV] → Redirecting to /(tabs)");
         router.replace("/(tabs)");
       }
     }
@@ -71,17 +85,28 @@ export default function AppLayout() {
   const [splashAnimationFinished, setSplashAnimationFinished] = useState(false);
 
   useEffect(() => {
+    console.log("[LAYOUT] appReady changed:", appReady);
     async function prepare() {
       try {
         await new Promise((resolve) => setTimeout(resolve, 1000));
       } catch (e) {
         console.warn(e);
       } finally {
+        console.log("[LAYOUT] Setting appReady = true");
         setAppReady(true);
         await SplashScreen.hideAsync();
       }
     }
     prepare();
+  }, []);
+
+  // Stable reference — prevents AnimatedSplashScreen's effect from
+  // restarting its timers on every parent re-render (inline arrow = new ref each render)
+  const handleSplashFinish = useCallback(() => {
+    console.log(
+      "[LAYOUT] Splash finished → setting splashAnimationFinished = true",
+    );
+    setSplashAnimationFinished(true);
   }, []);
 
   // UI is ready only when assets are loaded and custom splash finishes fading
@@ -97,12 +122,17 @@ export default function AppLayout() {
               <NavigationNavigator isAppUiReady={isAppUiReady} />
 
               {(!appReady || !splashAnimationFinished) && (
-                <AnimatedSplashScreen
-                  onFinish={() => setSplashAnimationFinished(true)}
-                />
+                <AnimatedSplashScreen onFinish={handleSplashFinish} />
               )}
             </View>
             <Toast />
+            {/* Required: AppKitProvider puts the singleton in React context;
+                AppKit renders the modal UI that reads from that context */}
+            {appKit && (
+              <AppKitProvider instance={appKit}>
+                <AppKit />
+              </AppKitProvider>
+            )}
           </AuthProvider>
         </Web3Provider>
       </QueryClientProvider>

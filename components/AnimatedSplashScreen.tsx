@@ -56,6 +56,7 @@ export function AnimatedSplashScreen({ onFinish }: AnimatedSplashScreenProps) {
 
         // 4. Cleanup and finish
         const finishTimer = setTimeout(() => {
+            console.log('[SPLASH] Timer fired → calling onFinish()');
             onFinish();
             setIsFinished(true);
         }, 3000);
